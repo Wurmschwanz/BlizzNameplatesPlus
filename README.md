@@ -2,10 +2,10 @@
 
 **Blizz Nameplates+** enhances the original Blizzard nameplates for **Vanilla WoW / WoW 1.12** while preserving their classic look and feel.
 
-It adds reliable multi-target aura tracking, Crowd Control, PvP immunity tracking, castbars, Combo Points, PvP totem indicators and additional visual customization without replacing the original Blizzard nameplate design.
+It adds reliable multi-target aura tracking, Crowd Control, PvP immunity tracking, castbars, Combo Points, PvP totem indicators and additional customization — without replacing the original Blizzard nameplate design.
 
 **Current version:** `v1.0.9`  
-**Required:** `SuperWoW.dll` and `ClassicAPI.dll`
+**Required:** `SuperWoW.dll` + `ClassicAPI.dll`
 
 ---
 
@@ -13,59 +13,103 @@ It adds reliable multi-target aura tracking, Crowd Control, PvP immunity trackin
 
 ### 🎯 Nameplates
 
-- Adjustable nameplate scale and Y offset
-- Adjustable non-target alpha
-- Enemy class colors
-- Tank Mode
-- Health text options
+- Adjustable **Nameplate Scale**
+- Adjustable **Nameplate Y Offset**
+- Adjustable **Non-Target Alpha**
+- Enemy **Class Colors**
+- **Tank Mode**
 - Optional **Hide Player Names**
-- Optional **Hide NPC/Mob Names**
-- Aura layout automatically becomes more compact when names are hidden
-- Foreign-tagged mobs shown with a neutral grey healthbar
-- Target Glow with selectable glow color
-- Target Plate on Top
-- Clean nameplate and aura layering
+- Optional **Hide NPC / Mob Names**
+- Adjustable **Name Font Size**
+- Adjustable **Name Y Offset**
+- Adjustable **Health Text Font Size**
+- Health text font outline options
+- Aura layouts automatically adjust when names are hidden
+- Foreign-tagged mobs use a neutral grey healthbar
+- **Target Glow** with customizable color
+- **Target Plate on Top**
+- Improved nameplate detection for better compatibility with other UI addons
+- Clean nameplate, aura and castbar layering
 
-### ☠️ Auras & Debuffs
+---
 
-- GUID-based multi-target debuff and DoT tracking
+### ❤️ Health Text
+
+Health information can be displayed directly on the nameplate with additional customization.
+
+Options include:
+
+- Health percentage display
+- Adjustable **Font Size**
+- Font outline:
+  - None
+  - Outline
+  - Thick Outline
+
+Health text customization is independent from the global nameplate scale.
+
+---
+
+### ☠️ Debuffs & DoTs
+
+- GUID-based multi-target tracking
 - Numeric aura timers
 - Stack counters
 - Reliable tracking across multiple visible nameplates
-- Adjustable aura icon size
-- Independent debuff positioning:
-  - **Top Mid**
-  - **Top Left**
-  - **Top Right**
-  - **Left**
-  - **Right**
-  - **Bottom Mid**
-  - **Bottom Left**
-  - **Bottom Right**
-- Bottom-positioned debuffs are automatically taken into account by the castbar layout
-- Mixed debuff and CC icon sizes are spaced correctly when sharing the same top row
+- Adjustable **Debuff Icon Size**
+- Independent **Debuff Y Offset**
 - Instant target-alpha updates
+
+Available debuff positions:
+
+- **Top Mid**
+- **Top Left**
+- **Top Right**
+- **Left**
+- **Right**
+- **Bottom Mid**
+- **Bottom Left**
+- **Bottom Right**
+
+Bottom-positioned debuffs are automatically taken into account by the castbar layout.
+
+Mixed debuff and CC icon sizes are also spaced correctly when sharing the same top row.
+
+---
 
 ### 🌀 Crowd Control
 
-- Dedicated Crowd Control tracking
+Dedicated Crowd Control tracking with independent layout options.
+
+Features:
+
+- Enable / disable CC tracking
 - Optional supported CC effects from other players
 - Separate **CC Icon Size**
-- CC positioning:
-  - **Top**
-  - **Left**
-  - **Right**
-- Optional dedicated CC row for:
-  - **Top Mid**
-  - **Top Left**
-  - **Top Right**
-- CCs can share the top aura row with debuffs without overlapping, even when different icon sizes are used
+- Independent **CC Y Offset**
+- Optional **Separate CC Row**
+
+Available CC positions:
+
+- **Top**
+- **Left**
+- **Right**
+
+When using a separate top row, CCs work correctly with:
+
+- **Top Mid**
+- **Top Left**
+- **Top Right**
+
+CCs and debuffs can share the same row even when using different icon sizes without overlapping.
+
+---
 
 ### 🛡️ PvP Immunities
 
 Important PvP immunity and protection effects can be displayed directly on nameplates.
 
-Supported effects include relevant abilities such as:
+Supported effects include abilities such as:
 
 - Divine Shield
 - Divine Protection
@@ -81,40 +125,79 @@ Features:
 
 - Dedicated **PvP Immunities** toggle
 - Separate **Immunity Icon Size**
-- Independent immunity positioning:
-  - **Top**
-  - **Left**
-  - **Right**
-- Strict spell whitelist to prevent unrelated buffs from being displayed as immunities
-- Immunity icons disappear when the corresponding aura is removed or cancelled
-- Divine Shield and Ice Block immediately clear invalid BNP debuff/CC display states where appropriate
-- Protection against stale aura information causing removed debuffs to briefly reappear
+- Independent **Immunity Y Offset**
+- Independent positioning
+- Strict spell whitelist
+- Fast removal when an immunity ends or is cancelled
+- Cleanup of invalid debuff / CC states after effects such as Divine Shield or Ice Block
+- Protection against stale aura information
+
+Available positions:
+
+- **Top**
+- **Left**
+- **Right**
+
+---
 
 ### 🔥 Totem Indicators
 
-Shaman totems can be displayed as clean, easily recognizable icons instead of full nameplates.
+Shaman totems can be displayed as clean and recognizable spell icons instead of full nameplates.
 
 - Automatically detects supported Shaman totems
-- Replaces the entire totem nameplate with the corresponding spell icon
-- No healthbar, name or level clutter
+- Replaces the full totem nameplate with the corresponding spell icon
+- Removes unnecessary healthbar, name and level clutter
 - Adjustable **Totem Icon Size**
+- Supports ranked totems automatically
 - Designed especially for clearer PvP situations
-- Supports ranked totems without requiring separate configuration
 
-### ✨ Class Features
+---
 
-- Blizzard-style Combo Points for:
-  - Rogue
-  - Druid
+### ✨ Combo Points
+
+Combo Points are supported for:
+
+- **Rogue**
+- **Druid**
+
+Features:
+
+- Combo Points displayed directly above the target nameplate
+- Adjustable **Combo Point Y Offset**
+- Independent positioning from the rest of the nameplate
+- Combo Points can remain visible on the previous target until new Combo Points are generated on another target
+
+---
 
 ### 🔥 Castbars
 
 - Enemy castbars
 - Spell icons
-- Adjustable castbar height
-- Adjustable spacing
+- Adjustable **Castbar Height**
+- Adjustable **Castbar Spacing**
+- Adjustable **Castbar Y Offset**
 - Castbar test mode
 - Automatically adjusts when debuffs are positioned below the nameplate
+- Improved layering so Target Glow does not cover the castbar
+
+---
+
+## ⚡ Performance & Compatibility
+
+Blizz Nameplates+ is designed to keep the original Blizzard nameplates instead of replacing them with a completely custom nameplate system.
+
+Recent improvements include:
+
+- Reduced unnecessary nameplate updates
+- Optimized aura and castbar handling
+- No unnecessary permanent layout scanning
+- Improved compatibility with addons that modify Blizzard nameplates
+- More robust nameplate detection
+- Mouseover tooltip support restored
+- Mouseover macros work correctly on nameplates
+- Settings are stored **per character**
+
+The goal is to add functionality while keeping the addon lightweight and close to the original Blizzard UI.
 
 ---
 
@@ -122,72 +205,138 @@ Shaman totems can be displayed as clean, easily recognizable icons instead of fu
 
 ### 🛡️ PvP Immunity Tracking
 
-A new dedicated immunity system has been added for important PvP effects such as **Divine Shield, Ice Block, Blessing of Protection, Berserker Rage, Fear Ward** and other supported abilities.
+A dedicated immunity system has been added for important PvP effects such as:
 
-Immunity tracking uses a strict spell whitelist so unrelated buffs cannot accidentally appear as immunity icons.
+**Divine Shield, Ice Block, Blessing of Protection, Berserker Rage, Fear Ward** and other supported abilities.
 
 Immunities have their own:
 
-- Enable/disable option
+- Enable / disable option
 - Icon size
-- Position setting
+- Position
+- Y Offset
 - Independent display logic
 
-Supported positions are:
+A strict spell whitelist prevents unrelated buffs from appearing as immunity icons.
 
-- **Top**
-- **Left**
-- **Right**
+---
 
-Immunity icons are also removed quickly when the aura ends or is cancelled.
+### ☠️ Expanded Aura Positioning
 
-### ✨ Divine Shield / Ice Block Cleanup
+Debuffs can now be positioned at:
 
-Protection effects such as **Divine Shield** and **Ice Block** now correctly clean up BNP's stored aura state where appropriate.
+- Top Mid
+- Top Left
+- Top Right
+- Left
+- Right
+- Bottom Mid
+- Bottom Left
+- Bottom Right
 
-This prevents removed debuffs or Crowd Control effects from remaining visible because of stale aura information.
+CCs and Immunities have their own independent positioning and Y offsets.
 
-### 👤 Hide Player and NPC Names
+This allows much more control over the final nameplate layout.
 
-Two new nameplate options have been added:
+---
+
+### ↕️ Independent Y Offsets
+
+Separate Y-offset settings have been added for:
+
+- **Debuffs**
+- **Crowd Control**
+- **PvP Immunities**
+- **Combo Points**
+- **Name Text**
+
+Each element can now be moved vertically without changing the global nameplate scale.
+
+---
+
+### 🔤 Improved Font Customization
+
+Additional text customization has been added.
+
+**Name Text:**
+
+- Adjustable Font Size
+- Adjustable Y Offset
+
+**Health Text:**
+
+- Adjustable Font Size
+- None / Outline / Thick Outline
+
+These options are independent from Nameplate Scale.
+
+---
+
+### 👤 Player & NPC Name Controls
+
+Player and NPC names can now be controlled independently:
 
 - **Hide Player Names**
-- **Hide NPC/Mob Names**
+- **Hide NPC / Mob Names**
 
-These settings are independent, allowing player names and NPC names to be controlled separately.
+When names are hidden, top-positioned aura icons automatically move closer to the healthbar.
 
-When a name is hidden, top-positioned aura icons automatically move closer to the healthbar to use the newly available space.
+---
 
-### ☠️ Expanded Debuff Positioning
+### 🌀 Improved CC Layout
 
-Debuff placement has been significantly expanded.
+The optional **Separate CC Row** now works correctly with:
 
-Available positions are now:
+- Top Mid
+- Top Left
+- Top Right
 
-- **Top Mid**
-- **Top Left**
-- **Top Right**
-- **Left**
-- **Right**
-- **Bottom Mid**
-- **Bottom Left**
-- **Bottom Right**
+Different icon sizes are also handled correctly.
 
-`Top Mid` replaces the previous standard `Top` layout and remains the default.
+For example:
 
-Bottom layouts also interact correctly with castbar positioning.
+**18 px Debuffs + 24 px CC icons**
 
-### 🌀 Improved CC Row Layout
+can share the same area without overlapping.
 
-The optional **Separate CC Row** can now be used with all three top debuff alignments:
+---
 
-- **Top Mid**
-- **Top Left**
-- **Top Right**
+### 🎯 Improved Nameplate Detection
 
-When CCs and debuffs share the same row, their individual icon sizes are now taken into account.
+Nameplate detection has been made more robust for setups where other UI or skin addons modify parts of the original Blizzard nameplate.
 
-For example, **18 px debuffs** and **24 px CC icons** can be displayed together without overlapping.
+This should help prevent issues such as:
+
+- Missing borders
+- Nameplates not being detected correctly
+- Other UI addons changing the Blizzard nameplate before BNP initializes it
+
+The compatibility handling is intentionally lightweight and does not continuously force the entire nameplate layout.
+
+---
+
+### 🖱️ Mouseover Support
+
+Nameplate mouse interaction has been improved.
+
+- Mouseover tooltips work correctly
+- Mouseover macros can properly detect units through their nameplates
+
+---
+
+### 💾 Per-Character Settings
+
+Settings are now stored **per character** instead of being shared account-wide.
+
+Each character can therefore have its own:
+
+- Nameplate layout
+- Aura positions
+- Icon sizes
+- Alpha settings
+- Castbar settings
+- Target settings
+- Font settings
 
 ---
 
@@ -227,7 +376,7 @@ Both DLLs are required and must be loaded before the game starts.
 
 ### SuperWoW.dll
 
-Provides the GUID, unit, combat and cast information used for:
+Provides GUID, unit, combat and cast information used for:
 
 - Multi-target tracking
 - Castbars
@@ -238,7 +387,7 @@ Provides the GUID, unit, combat and cast information used for:
 
 ### ClassicAPI.dll
 
-Provides exact nameplate resolution and more reliable aura information, including:
+Provides more reliable nameplate and aura information, including:
 
 - Spell IDs
 - Aura durations
@@ -251,7 +400,7 @@ Provides exact nameplate resolution and more reliable aura information, includin
 [Download ClassicAPI](https://github.com/brues-code/ClassicAPI)
 
 > **Keep both DLLs up to date.**  
-> Without SuperWoW and ClassicAPI, Blizz Nameplates+ is not supported.
+> Blizz Nameplates+ is not supported without SuperWoW and ClassicAPI.
 
 ---
 
@@ -263,7 +412,7 @@ Provides exact nameplate resolution and more reliable aura information, includin
 
 3. Delete any older `BlizzNameplatesPlus` addon folder.
 
-4. Extract the new addon folder into:
+4. Extract the new addon into:
 
    `Interface\AddOns\`
 
@@ -279,73 +428,100 @@ Provides exact nameplate resolution and more reliable aura information, includin
 
 ## ⚙️ Settings
 
-Open the settings through the **BN+ minimap button** or type:
+Open the settings using the **BN+ minimap button** or type:
 
 `/bnp`
 
-### Nameplates
+### 🎯 Nameplates
+
+**General**
 
 - Nameplate Scale
-- Y Offset
+- Nameplate Y Offset
 - Non-Target Alpha
 - Class Colors
 - Tank Mode
-- Health Text
 - Hide Player Names
-- Hide NPC/Mob Names
-- Combo Points
+- Hide NPC / Mob Names
 
-### Auras
+**Names**
 
-- Aura Icon Size
-- Debuffs
-- Debuff Position:
-  - Top Mid
-  - Top Left
-  - Top Right
-  - Left
-  - Right
-  - Bottom Mid
-  - Bottom Left
-  - Bottom Right
-- Crowd Control
+- Name Font Size
+- Name Y Offset
+
+**Health Text**
+
+- Health Text Mode
+- Health Font Size
+- Health Font Outline
+
+**Combo Points**
+
+- Enable Combo Points
+- Combo Point Y Offset
+
+---
+
+### ☠️ Auras
+
+**Debuffs**
+
+- Enable Debuffs
+- Debuff Icon Size
+- Debuff Position
+- Debuff Y Offset
+
+**Crowd Control**
+
+- Enable Crowd Control
 - CC Icon Size
-- CC Position:
-  - Top
-  - Left
-  - Right
+- CC Position
+- CC Y Offset
 - Separate CC Row
-- CCs from Other Players
-- PvP Immunities
-- Immunity Position:
-  - Top
-  - Left
-  - Right
-- Immunity Icon Size
+- Show CCs from Other Players
 
-### Totems
+**PvP Immunities**
+
+- Enable PvP Immunities
+- Immunity Icon Size
+- Immunity Position
+- Immunity Y Offset
+
+---
+
+### 🔥 Totems
 
 - Enable Totem Icons
 - Totem Icon Size
 
-### Castbar
+---
+
+### 🔥 Castbar
 
 - Enable Castbars
 - Castbar Height
 - Castbar Spacing
+- Castbar Y Offset
 - Test Castbars
 
-### Target
+---
+
+### 🎯 Target
 
 - Target Glow
 - Glow Color
+- Glow Scale
+- Glow Alpha
+- Target Arrows
 - Target Plate on Top
 
-### Tools
+---
+
+### 🛠️ Tools
 
 - Missing Spell / Aura Recorder
 
-Most changes are applied immediately.
+Most settings are applied immediately.
 
 ---
 
@@ -355,4 +531,6 @@ Created by **Wurmschwanz**.
 
 Thanks to everyone who tested **Blizz Nameplates+**, reported bugs, suggested features and supplied recorder data.
 
-Special thanks to everyone helping test different classes, PvP situations and large raid environments. ❤️
+Special thanks to everyone helping test different classes, PvP situations, addon combinations and large raid environments. ❤️
+
+Your feedback continues to make Blizz Nameplates+ better.
