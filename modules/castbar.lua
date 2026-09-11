@@ -416,12 +416,14 @@ eventFrame:SetScript("OnEvent", function()
 
   if not guid then return end
 
-  -- A CAST event with no timer is the completion event for a running timed
-  -- cast. Convert only that existing cast into feedback. This does not touch
-  -- the spark/progress implementation used while the cast is running.
-  if eventType == "CAST" and timerMS <= 0 then
+  -- SuperWoW CAST is the successful completion event for a cast already
+  -- started with START/CHANNEL. Do not use arg5/timerMS to identify completion:
+  -- SuperWoW may still provide a non-zero timer on CAST. Match the running spell
+  -- instead, mirroring SuperAPI_Castlib's live-event handling.
+  if eventType == "CAST" then
     local previous = casts[guid]
-    if previous and previous.duration and previous.duration > 0 then
+    local sameSpell = previous and (previous.spellID == nil or spellID == nil or tostring(previous.spellID) == tostring(spellID))
+    if previous and sameSpell and previous.duration and previous.duration > 0 then
       local now = GetTime()
       castFeedback[guid] = {
         state = "success",
@@ -434,11 +436,13 @@ eventFrame:SetScript("OnEvent", function()
         flashDuration = CAST_SUCCESS_FEEDBACK_DURATION,
       }
       casts[guid] = nil
-      return
     end
+    -- A CAST without a matching running cast is an instant/proc/non-bar event.
+    -- It must not create or restart a castbar.
+    return
   end
 
-  if eventType == "START" or eventType == "CAST" or eventType == "CHANNEL" then
+  if eventType == "START" or eventType == "CHANNEL" then
     if timerMS <= 0 then
       -- Instant casts do not need a visible castbar.
       casts[guid] = nil
@@ -456,6 +460,7 @@ eventFrame:SetScript("OnEvent", function()
     casts[guid] = {
       name = name,
       texture = texture,
+      spellID = spellID,
       startTime = now,
       endTime = now + duration,
       duration = duration,
