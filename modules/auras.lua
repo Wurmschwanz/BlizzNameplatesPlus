@@ -1229,6 +1229,11 @@ local function AddFailurePattern(formatText)
 end
 
 AddFailurePattern(SPELLIMMUNESELFOTHER)
+-- Some physical/ability immunities use the alternate Vanilla combat string
+-- "%s is immune to your %s." (for example bleed-immune mobs hit with Rake).
+-- Treat it exactly like SPELLIMMUNESELFOTHER so provisional CAST-primary
+-- timers are rolled back globally instead of needing per-spell exceptions.
+AddFailurePattern(IMMUNESPELLSELFOTHER)
 AddFailurePattern(IMMUNEDAMAGECLASSSELFOTHER)
 AddFailurePattern(SPELLMISSSELFOTHER)
 AddFailurePattern(SPELLRESISTSELFOTHER)
