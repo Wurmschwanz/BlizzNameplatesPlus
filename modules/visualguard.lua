@@ -75,6 +75,41 @@ local function ApplyBorderStyle(plate)
   end
 end
 
+local function ApplyHealthbarBackground(plate)
+  local healthbar = plate and plate.healthbar
+  if not healthbar then return end
+
+  local enabled = BNP.IsBlackHealthbarBackgroundEnabled and
+                  BNP:IsBlackHealthbarBackgroundEnabled()
+  local background = plate.BNPHealthbarBackground
+
+  -- Keep the default path allocation-free. The extra texture is created only
+  -- after the user enables the option, then reused whenever this plate is
+  -- recycled for another unit.
+  if not enabled then
+    if background and background.IsShown and background:IsShown() then
+      background:Hide()
+    end
+    return
+  end
+
+  if not background then
+    -- BORDER sits above BNP's target glow (BACKGROUND) but below the StatusBar
+    -- fill, so the unfilled portion stays truly black even on the target.
+    background = healthbar:CreateTexture(nil, "BORDER")
+    background:SetTexture(0, 0, 0, 1)
+    background:SetAllPoints(healthbar)
+    plate.BNPHealthbarBackground = background
+  end
+
+  if background.GetParent and background:GetParent() ~= healthbar then
+    background:SetParent(healthbar)
+    background:ClearAllPoints()
+    background:SetAllPoints(healthbar)
+  end
+  if background.IsShown and not background:IsShown() then background:Show() end
+end
+
 function BNP:RepairNativeNameplateVisuals(plate)
   if not plate then return end
   if IsTotemIconOnly(plate) then return end
@@ -82,12 +117,20 @@ function BNP:RepairNativeNameplateVisuals(plate)
   RestoreBorder(plate)
   RestoreGlow(plate)
   ApplyBorderStyle(plate)
+  ApplyHealthbarBackground(plate)
 end
 
 function BNP:RefreshNameplateBorderStyle()
   local plate
   for plate in pairs(BNP.plates or {}) do
     self:RepairNativeNameplateVisuals(plate)
+  end
+end
+
+function BNP:RefreshHealthbarBackground()
+  local plate
+  for plate in pairs(BNP.plates or {}) do
+    ApplyHealthbarBackground(plate)
   end
 end
 

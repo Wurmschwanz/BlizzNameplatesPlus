@@ -422,6 +422,9 @@ local function EnsureTargetGlow(plate)
   -- BNP's only intentional visual change is +3 px on X.
   local glow = anchor:CreateTexture(nil, "BACKGROUND")
   glow:SetTexture("Interface\\AddOns\\BlizzNameplatesPlus\\media\\shagu_target_glow.tga")
+  -- BLEND keeps the alpha-mask visible when it is tinted black. Additive
+  -- blending would make a black target glow disappear completely.
+  glow:SetBlendMode("BLEND")
   glow:SetPoint("CENTER", anchor, "CENTER", 3, 0)
 
   local width = anchor.GetWidth and anchor:GetWidth() or 120

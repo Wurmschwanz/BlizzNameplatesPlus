@@ -17,6 +17,7 @@ BNP.defaults = BNP.defaults or {
   invertTankColors = false,
   classColors = true,
   darkNameplateBorder = false,
+  blackHealthbarBackground = false,
   darkComboPointBorder = false,
   hidePlayerNames = false,
   hideNPCNames = false,
@@ -74,6 +75,7 @@ function BNP:InitConfig()
   if BNP_DB.invertTankColors == nil then BNP_DB.invertTankColors = self.defaults.invertTankColors end
   if BNP_DB.classColors == nil then BNP_DB.classColors = self.defaults.classColors end
   if BNP_DB.darkNameplateBorder == nil then BNP_DB.darkNameplateBorder = self.defaults.darkNameplateBorder end
+  if BNP_DB.blackHealthbarBackground == nil then BNP_DB.blackHealthbarBackground = self.defaults.blackHealthbarBackground end
   if BNP_DB.darkComboPointBorder == nil then BNP_DB.darkComboPointBorder = self.defaults.darkComboPointBorder end
   if BNP_DB.hidePlayerNames == nil then BNP_DB.hidePlayerNames = self.defaults.hidePlayerNames end
   if BNP_DB.hideNPCNames == nil then BNP_DB.hideNPCNames = self.defaults.hideNPCNames end
@@ -241,6 +243,10 @@ function BNP:IsDarkNameplateBorderEnabled()
   return BNP_DB and BNP_DB.darkNameplateBorder and true or false
 end
 
+function BNP:IsBlackHealthbarBackgroundEnabled()
+  return BNP_DB and BNP_DB.blackHealthbarBackground and true or false
+end
+
 function BNP:HidePlayerNamesEnabled()
   return BNP_DB and BNP_DB.hidePlayerNames and true or false
 end
@@ -333,6 +339,7 @@ function BNP:GetTargetGlowColor()
     green  = { 0.25, 1.00, 0.35 },
     red    = { 1.00, 0.20, 0.20 },
     purple = { 0.75, 0.35, 1.00 },
+    black  = { 0.00, 0.00, 0.00 },
   }
 
   local c = colors[key] or colors.white
@@ -372,6 +379,7 @@ function BNP:GetTargetArrowColor()
     green  = { 0.25, 1.00, 0.35 },
     red    = { 1.00, 0.20, 0.20 },
     purple = { 0.75, 0.35, 1.00 },
+    black  = { 0.00, 0.00, 0.00 },
   }
 
   local c = colors[key] or colors.white

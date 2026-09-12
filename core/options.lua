@@ -637,7 +637,7 @@ function BNP:CreateOptions()
   end, 214)
   frame.hideNPCNamesCheck = hideNPCNames
 
-  CreateSection(nameplatesPage, "Health Text", -250)
+  CreateSection(nameplatesPage, "Health Bar & Text", -250)
 
   local healthTextLabel = nameplatesPage:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   healthTextLabel:SetPoint("TOPLEFT", nameplatesPage, "TOPLEFT", 28, -278)
@@ -688,6 +688,19 @@ function BNP:CreateOptions()
     if BNP.RefreshHealthPercent then BNP:RefreshHealthPercent() end
   end)
   frame.healthTextFontSizeSlider = healthFontSize
+
+  local blackHealthbarBackground = CreateCheck(nameplatesPage, "Black Health Background", -340, function()
+    BNP_DB.blackHealthbarBackground = this:GetChecked() and true or false
+    if BNP.RefreshHealthbarBackground then BNP:RefreshHealthbarBackground() end
+  end, 214)
+  blackHealthbarBackground:SetScript("OnEnter", function()
+    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+    GameTooltip:SetText("Black Healthbar Background", 1, 0.82, 0)
+    GameTooltip:AddLine("Shows missing health on the nameplate against a solid black background instead of the transparent world view.", 1, 1, 1, true)
+    GameTooltip:Show()
+  end)
+  blackHealthbarBackground:SetScript("OnLeave", function() GameTooltip:Hide() end)
+  frame.blackHealthbarBackgroundCheck = blackHealthbarBackground
 
   local healthOutlineLabel = nameplatesPage:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   healthOutlineLabel:SetPoint("TOPLEFT", nameplatesPage, "TOPLEFT", 220, -278)
@@ -1213,6 +1226,7 @@ function BNP:CreateOptions()
     green = "Green",
     red = "Red",
     purple = "Purple",
+    black = "Black",
   }
 
   local function SetTargetGlowColor(color)
@@ -1224,7 +1238,7 @@ function BNP:CreateOptions()
   end
 
   UIDropDownMenu_Initialize(glowColorDropdown, function()
-    local colors = { "white", "gold", "blue", "green", "red", "purple" }
+    local colors = { "white", "gold", "blue", "green", "red", "purple", "black" }
     local n
     for n = 1, table.getn(colors) do
       local color = colors[n]
@@ -1287,6 +1301,7 @@ function BNP:CreateOptions()
     green = "Green",
     red = "Red",
     purple = "Purple",
+    black = "Black",
   }
 
   local function SetTargetArrowColor(color)
@@ -1298,7 +1313,7 @@ function BNP:CreateOptions()
   end
 
   UIDropDownMenu_Initialize(arrowColorDropdown, function()
-    local colors = { "match", "white", "gold", "blue", "green", "red", "purple" }
+    local colors = { "match", "white", "gold", "blue", "green", "red", "purple", "black" }
     local n
     for n = 1, table.getn(colors) do
       local color = colors[n]
@@ -1606,6 +1621,9 @@ function BNP:SyncOptions()
   if frame.darkNameplateBorderCheck then
     frame.darkNameplateBorderCheck:SetChecked(self:IsDarkNameplateBorderEnabled())
   end
+  if frame.blackHealthbarBackgroundCheck then
+    frame.blackHealthbarBackgroundCheck:SetChecked(self:IsBlackHealthbarBackgroundEnabled())
+  end
   if frame.hidePlayerNamesCheck then frame.hidePlayerNamesCheck:SetChecked(self:HidePlayerNamesEnabled()) end
   if frame.hideNPCNamesCheck then frame.hideNPCNamesCheck:SetChecked(self:HideNPCNamesEnabled()) end
   if frame.debuffsCheck then frame.debuffsCheck:SetChecked(self:AreDebuffsEnabled()) end
@@ -1677,6 +1695,7 @@ function BNP:SyncOptions()
       green = "Green",
       red = "Red",
       purple = "Purple",
+      black = "Black",
     }
     UIDropDownMenu_SetSelectedValue(frame.arrowColorDropdown, color or "match")
     UIDropDownMenu_SetText(labels[color] or "Match Target Color", frame.arrowColorDropdown)
@@ -1711,6 +1730,7 @@ function BNP:SyncOptions()
       green = "Green",
       red = "Red",
       purple = "Purple",
+      black = "Black",
     }
     UIDropDownMenu_SetSelectedValue(frame.glowColorDropdown, color or "white")
     UIDropDownMenu_SetText(labels[color] or "White", frame.glowColorDropdown)
