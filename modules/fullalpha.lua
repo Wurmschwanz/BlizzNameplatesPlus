@@ -15,6 +15,12 @@ local classicTargetCacheAvailable = false
 local targetGUIDCacheAt = -100
 local targetGUIDCacheValue = nil
 local TARGET_GUID_CACHE_TIME = 0.02
+-- Visual target indicators (glow/arrows/target-on-top) must resolve to exactly
+-- one plate. Keep this separate from the deliberately conservative alpha
+-- fallback, which may temporarily treat same-name plates as possible targets.
+local strictTargetCacheGUID = nil
+local strictTargetCacheAt = -100
+local strictTargetCachePlate = nil
 
 local function GetPlateGUID(plate)
   if not plate or not plate.GetName then return nil end
@@ -64,6 +70,9 @@ local function InvalidateTargetResolution()
   classicTargetCacheAvailable = false
   targetGUIDCacheAt = -100
   targetGUIDCacheValue = nil
+  strictTargetCacheGUID = nil
+  strictTargetCacheAt = -100
+  strictTargetCachePlate = nil
 end
 
 local function GetClassicAPITargetPlate(targetGUID)
@@ -140,6 +149,76 @@ local function IsPlateCurrentTarget(plate, targetGUID)
   -- for a recycled projected nameplate. The displayed Blizzard name/level has
   -- already switched by then and protects the actual target from being dimmed.
   return PlateMatchesTargetVisual(plate)
+end
+
+-- Resolve one authoritative target plate for visual target indicators.
+-- Unlike IsPlateCurrentTarget(), this intentionally NEVER falls back to the
+-- displayed name/level because several identical mobs can share those values.
+-- If SuperWoW temporarily exposes the same stale GUID on more than one plate,
+-- the result is treated as ambiguous and no indicator is shown until identity
+-- becomes unique again. This prevents duplicated arrows/glows by construction.
+local function GetStrictTargetPlate(targetGUID)
+  if not targetGUID then return nil end
+
+  local now = GetTime()
+  if strictTargetCacheGUID == targetGUID and
+     now - strictTargetCacheAt < TARGET_RESOLVE_CACHE_TIME then
+    return strictTargetCachePlate
+  end
+
+  local result = nil
+  local classicTargetPlate, classicTargetAvailable =
+    GetClassicAPITargetPlate(targetGUID)
+
+  -- ClassicAPI's exact target frame is authoritative when it maps directly to
+  -- a plate tracked by BNP. This is the normal supported path.
+  if classicTargetAvailable and classicTargetPlate and
+     BNP.plates and BNP.plates[classicTargetPlate] then
+    result = classicTargetPlate
+  else
+    local guidCandidate = nil
+    local guidAmbiguous = false
+    local plate
+
+    -- UnitIsUnit is stricter than visual name/level matching, so prefer it.
+    for plate in pairs(BNP.plates or {}) do
+      if plate and plate.IsShown and plate:IsShown() then
+        local token = GetPlateToken(plate)
+        if token and UnitIsUnit then
+          local ok, sameUnit = pcall(UnitIsUnit, token, "target")
+          if ok and sameUnit then
+            result = plate
+            break
+          end
+        end
+      end
+    end
+
+    -- GUID is the final fallback, but only when exactly one visible plate owns
+    -- it. Recycled projected plates can briefly expose stale valid GUIDs.
+    if not result then
+      for plate in pairs(BNP.plates or {}) do
+        if plate and plate.IsShown and plate:IsShown() then
+          local plateGUID = GetVerifiedPlateGUID(plate)
+          if plateGUID and plateGUID == targetGUID then
+            if guidCandidate and guidCandidate ~= plate then
+              guidAmbiguous = true
+              break
+            end
+            guidCandidate = plate
+          end
+        end
+      end
+      if guidCandidate and not guidAmbiguous then
+        result = guidCandidate
+      end
+    end
+  end
+
+  strictTargetCacheGUID = targetGUID
+  strictTargetCacheAt = now
+  strictTargetCachePlate = result
+  return result
 end
 
 local function HasResolvedVisibleTarget(targetGUID)
@@ -686,36 +765,19 @@ local function ApplyTargetAlpha(plate)
     plate:SetAlpha(wanted)
   end
 
-  -- Publish the same resolved target identity for detached aura containers.
-  -- They cannot inherit it through their shared WorldFrame parent.
-  local targetPlate = nil
-  local targetAvailable = false
-  local isCurrentTarget = false
-  if targetGUID then
-    targetPlate, targetAvailable = GetClassicAPITargetPlate(targetGUID)
-    if targetAvailable and targetPlate then
-      isCurrentTarget = plate == targetPlate
-      if not isCurrentTarget then
-        local plateGUID = GetVerifiedPlateGUID(plate)
-        isCurrentTarget = plateGUID and plateGUID == targetGUID
-      end
-    else
-      isCurrentTarget = IsPlateCurrentTarget(plate, targetGUID)
-    end
-  end
-  plate.BNPIsCurrentTarget = isCurrentTarget and true or false
+  -- Publish a STRICT single target identity for detached aura containers and
+  -- target-only visuals. Do not reuse the alpha resolver here: its intentional
+  -- name/level safety fallback can match several identical mobs at once.
+  local strictTargetPlate = GetStrictTargetPlate(targetGUID)
+  plate.BNPIsCurrentTarget = strictTargetPlate == plate and true or false
 
-  -- ClassicAPI returns the underlying target nameplate frame itself. Force it
-  -- opaque after every alpha application. Even if SuperWoW momentarily reports
-  -- the recycled frame's previous valid GUID, both writes happen in the same
-  -- Lua update and the real target finishes the frame at alpha 1.
-  if targetGUID then
-    if targetAvailable and targetPlate and targetPlate.GetAlpha and targetPlate.SetAlpha then
-      targetPlate.BNPIsCurrentTarget = true
-      local ok, alpha = pcall(targetPlate.GetAlpha, targetPlate)
-      if not ok or alpha ~= 1 then
-        pcall(targetPlate.SetAlpha, targetPlate, 1)
-      end
+  -- ClassicAPI returns the underlying target nameplate frame itself. Force the
+  -- strictly resolved target opaque after every alpha application.
+  if strictTargetPlate and strictTargetPlate.GetAlpha and strictTargetPlate.SetAlpha then
+    strictTargetPlate.BNPIsCurrentTarget = true
+    local ok, alpha = pcall(strictTargetPlate.GetAlpha, strictTargetPlate)
+    if not ok or alpha ~= 1 then
+      pcall(strictTargetPlate.SetAlpha, strictTargetPlate, 1)
     end
   end
 end
