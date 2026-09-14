@@ -711,6 +711,10 @@ local function FormatTimer(remaining)
   return tostring(math.ceil(remaining))
 end
 
+local function SortImmunityActiveByOrder(a, b)
+  return (a.entry.order or 0) < (b.entry.order or 0)
+end
+
 local function Render(plate, guid, now)
   local container = plate and plate.BNPImmunityContainer
   if not container then return end
@@ -755,7 +759,7 @@ local function Render(plate, guid, now)
   end
 
   if activeCount > 1 then
-    table.sort(active, function(a, b) return (a.entry.order or 0) < (b.entry.order or 0) end)
+    table.sort(active, SortImmunityActiveByOrder)
   end
 
   local count = activeCount
@@ -809,8 +813,6 @@ local function UpdatePlate(plate)
     HideContainer(plate)
     return
   end
-  if not plate.BNPImmunityContainer then CreateContainer(plate) end
-
   local now = GetTime()
   local guid = BNP.GetStablePlateAuraGUID and BNP.GetStablePlateAuraGUID(plate, now) or GetPlateGUID(plate)
   if not guid then HideContainer(plate) return end
@@ -831,12 +833,22 @@ local function UpdatePlate(plate)
   if classicCanScan and UnitIsPlayer then
     classicCanScan = UnitIsPlayer(classicUnit) and true or false
   end
-  if classicCanScan then ScanClassicAPIBuffs(classicUnit, guid, now) end
-
   local legacyCanScan = unit ~= nil
   if legacyCanScan and UnitIsPlayer then
     legacyCanScan = UnitIsPlayer(unit) and true or false
   end
+
+  -- Lazy creation: NPC nameplates with no immunity state never need a
+  -- container or its four icon frames. Existing cast-event state still gets
+  -- rendered even during a short token-resolution gap.
+  local cache = BNP.guidImmunities and BNP.guidImmunities[guid]
+  if not classicCanScan and not legacyCanScan and not cache then
+    HideContainer(plate)
+    return
+  end
+
+  if not plate.BNPImmunityContainer then CreateContainer(plate) end
+  if classicCanScan then ScanClassicAPIBuffs(classicUnit, guid, now) end
   if legacyCanScan then ScanUnitBuffs(unit, guid, now) end
 
   Render(plate, guid, now)
@@ -997,18 +1009,15 @@ end
 
 -- Sanity-check the whole module callback so one optional PvP feature can never
 -- stop any other BNP nameplate module.
-local function SafeCreateContainer(plate)
-  local ok, err = pcall(CreateContainer, plate)
-  if not ok then ReportImmunityError("create", err) end
-end
-
 local function SafeUpdatePlate(plate)
   local ok, err = pcall(UpdatePlate, plate)
   if not ok then ReportImmunityError("update", err) end
 end
 
-table.insert(BNP.libnameplate.OnInit, SafeCreateContainer)
-table.insert(BNP.libnameplate.OnShow, SafeCreateContainer)
+-- Containers are created lazily by UpdatePlate only for player plates (or
+-- when a cast-event cache exists). OnShow still updates immediately so recycled
+-- frames cannot display stale immunity icons.
+table.insert(BNP.libnameplate.OnShow, SafeUpdatePlate)
 
 -- Immunity scans are one of the heavier PvP paths (ClassicAPI + UnitBuff).
 -- The old libnameplate callback scanned every visible player in the same 0.10s

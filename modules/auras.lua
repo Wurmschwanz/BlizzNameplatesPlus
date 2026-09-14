@@ -562,15 +562,142 @@ local function CreateCCContainer(plate)
   ApplyAuraFrameLevel(plate, container)
 end
 
-local function GetPlateGUID(plate)
-  if not plate or not plate.GetName then return nil end
+-- ClassicAPI 1.15.x aura/nameplate bridge -----------------------------------
+-- Keep these helpers on BNP instead of as file-level locals: auras.lua is
+-- already close to Lua's local-variable ceiling, and adding a handful of
+-- long-lived locals would make the whole file fail to compile on 1.12.
+BNP._ClassicAuraUnitDebuff = C_UnitAuras and C_UnitAuras.UnitDebuff
+BNP._ClassicGetAuraSlots = C_UnitAuras and C_UnitAuras.GetAuraSlots
+BNP._ClassicUnitAuraBySlot = C_UnitAuras and C_UnitAuras.UnitAuraBySlot
+BNP._ClassicGetNamePlateForUnit = C_NamePlate and C_NamePlate.GetNamePlateForUnit
+BNP._ClassicUnitGUID = UnitGUID
+BNP._ClassicAuraSlotScratch = BNP._ClassicAuraSlotScratch or {}
 
-  -- SuperWoW stores the unit GUID/token directly on the nameplate name slot.
-  -- Use that exact token, just like Tank Mode and ShaguTweaks do. This avoids
-  -- unreliable UnitExists() resolution and, importantly, avoids same-name
-  -- fallback collisions between two mobs with identical names.
-  local token = plate:GetName(1)
-  if token and token ~= "" then return token end
+function BNP:_ReadClassicDebuff(unit, index, filter)
+  local fn = self._ClassicAuraUnitDebuff
+  if fn then
+    -- Allocation-free ClassicAPI positional form:
+    -- name, icon, count, dispelType, duration, expirationTime, source,
+    -- isStealable, nameplateShowPersonal, spellId, ...
+    local name, icon, count, dispelType, duration, expirationTime, source,
+      isStealable, nameplateShowPersonal, spellID = fn(unit, index, filter)
+    if not name then return nil end
+
+    -- Return the legacy BNP shape used throughout this module. Duration and
+    -- expiration occupy slots 5/6 so existing duration probing can consume
+    -- them without AuraData table allocations or another aura scan.
+    return icon, count, dispelType, spellID, duration, expirationTime,
+      source, isStealable, nameplateShowPersonal, name
+  end
+
+  return UnitDebuff(unit, index)
+end
+
+function BNP:_IsOwnClassicAuraSource(source)
+  return source == "player" or source == "pet"
+end
+
+function BNP:_IsKnownForeignClassicAuraSource(source)
+  return source ~= nil and source ~= "" and not self:_IsOwnClassicAuraSource(source)
+end
+
+function BNP:_BindClassicPlateToken(token)
+  local getPlate = self._ClassicGetNamePlateForUnit
+  if not token or not getPlate then return end
+  local plate = getPlate(token)
+  if not plate then return end
+
+  plate.BNPClassicUnitToken = token
+  if self._ClassicUnitGUID then
+    local exactGUID = self._ClassicUnitGUID(token)
+    plate.BNPClassicGUID = exactGUID
+
+    -- ClassicAPI's NAME_PLATE_UNIT_ADDED mapping is authoritative. The legacy
+    -- same-name stabilization below intentionally delays GUID switches to hide
+    -- transient SuperWoW token swaps in dense raids, but doing that for an
+    -- exact nameplateN mapping can briefly render the previous same-name mob's
+    -- auras on a recycled frame. Pin the exact GUID immediately instead.
+    if exactGUID then
+      plate.BNPAuraGUIDStable = exactGUID
+      plate.BNPAuraGUIDCandidate = exactGUID
+      plate.BNPAuraGUIDCandidateCount = 8
+      plate.BNPAuraGUIDLastGoodAt = GetTime()
+      plate.BNPAuraForceFreshIdentity = nil
+    end
+  end
+
+  -- The event-driven aura watcher is defined later in this file, after all
+  -- aura reconciliation helpers exist. Once available, bind this exact plate
+  -- to UNIT_AURA for only its nameplateN token.
+  if self._EnsureClassicAuraWatcher then
+    self:_EnsureClassicAuraWatcher(plate, token)
+  end
+end
+
+function BNP:_RefreshClassicPlateTokens()
+  if not self._ClassicGetNamePlateForUnit then return end
+  local i
+  for i = 1, 40 do
+    local token = "nameplate" .. i
+    if UnitExists(token) then self:_BindClassicPlateToken(token) end
+  end
+end
+
+if BNP._ClassicGetNamePlateForUnit then
+  local classicPlateEvents = CreateFrame("Frame")
+  classicPlateEvents:RegisterEvent("NAME_PLATE_UNIT_ADDED")
+  classicPlateEvents:RegisterEvent("NAME_PLATE_UNIT_REMOVED")
+  classicPlateEvents:RegisterEvent("PLAYER_ENTERING_WORLD")
+  classicPlateEvents:SetScript("OnEvent", function()
+    if event == "NAME_PLATE_UNIT_ADDED" then
+      BNP:_BindClassicPlateToken(arg1)
+    elseif event == "NAME_PLATE_UNIT_REMOVED" then
+      -- ClassicAPI guarantees that arg1 still resolves to the leaving unit
+      -- during this event, so clear only the frame that owns this token.
+      local plate = BNP._ClassicGetNamePlateForUnit(arg1)
+      if plate and plate.BNPClassicUnitToken == arg1 then
+        if BNP._ReleaseClassicAuraWatcher then
+          BNP:_ReleaseClassicAuraWatcher(plate, arg1)
+        end
+        plate.BNPClassicUnitToken = nil
+        plate.BNPClassicGUID = nil
+
+        -- v1.15.6 guarantees that this is the exact leaving frame. Do not keep
+        -- the old stabilized GUID around for a later recycled same-name plate;
+        -- that legacy hold is only needed when ClassicAPI identity is absent.
+        plate.BNPAuraGUIDStable = nil
+        plate.BNPAuraGUIDCandidate = nil
+        plate.BNPAuraGUIDCandidateCount = 0
+        plate.BNPAuraGUIDLastGoodAt = nil
+        plate.BNPAuraForceFreshIdentity = true
+      end
+    elseif event == "PLAYER_ENTERING_WORLD" then
+      BNP:_RefreshClassicPlateTokens()
+    end
+  end)
+end
+
+local function GetPlateGUID(plate)
+  if not plate then return nil end
+
+  -- Preferred path: the event-bound ClassicAPI token resolves directly to the
+  -- exact visible unit and therefore to its stable GUID.
+  local classicToken = plate.BNPClassicUnitToken
+  if classicToken and BNP._ClassicUnitGUID then
+    local guid = BNP._ClassicUnitGUID(classicToken)
+    if guid then
+      plate.BNPClassicGUID = guid
+      return guid
+    end
+  end
+
+  -- Fallback: SuperWoW stores the unit GUID/token directly on the nameplate
+  -- name slot.  Keep this path for compatibility and during the one-frame gap
+  -- before ClassicAPI's synthesized NAME_PLATE_UNIT_ADDED event arrives.
+  if plate.GetName then
+    local token = plate:GetName(1)
+    if token and token ~= "" then return token end
+  end
   return nil
 end
 
@@ -837,12 +964,12 @@ end
 local function FindJudgementAuraOnUnit(unit)
   if playerClass ~= "PALADIN" or not unit then return nil end
 
-  local i, texture, stacks, dtype, auraSpellID
+  local i, texture, stacks, dtype, auraSpellID, duration, expirationTime, source
   for i = 1, 64 do
-    texture, stacks, dtype, auraSpellID = UnitDebuff(unit, i)
+    texture, stacks, dtype, auraSpellID, duration, expirationTime, source = BNP:_ReadClassicDebuff(unit, i)
     if not texture then break end
 
-    if auraSpellID then
+    if auraSpellID and not BNP:_IsKnownForeignClassicAuraSource(source) then
       local auraName = nil
       if SpellInfo then auraName = SpellInfo(auraSpellID) end
 
@@ -1296,34 +1423,62 @@ local function HasPendingAuras()
 end
 
 local function GetUnitTokenForPlate(plate)
-  if not plate or not plate.GetName then return nil end
-  return plate:GetName(1)
+  if not plate then return nil end
+
+  -- Use the real ClassicAPI nameplateN token whenever possible.  This is the
+  -- token family C_UnitAuras is designed around and avoids GUID/name fallback
+  -- ambiguity with identical mobs.
+  local token = plate.BNPClassicUnitToken
+  if token and UnitExists(token) then return token end
+
+  if plate.GetName then return plate:GetName(1) end
+  return nil
 end
 
-local function FindMatchingAuraOnUnit(unit, def, castSpellID)
+local function FindMatchingAuraOnUnit(unit, def, castSpellID, snapshot)
   if not unit or not def then return nil, nil, nil end
 
-  -- SuperWoW can expose more than the stock 16/32 debuff slots. In a 40-player
-  -- raid our own debuff may therefore sit beyond slot 32. Stopping at 32 made
-  -- valid casts time out instead of entering guidAuras.
+  -- Event-driven ClassicAPI updates pass one slot snapshot through the entire
+  -- reconciliation chain. Legacy/fallback callers still scan UnitDebuff.
   local i = 1
-  while i <= 64 do
-    local texture, stacks, dtype, auraSpellID = UnitDebuff(unit, i)
-    if not texture then break end
+  local maxIndex = snapshot and snapshot.count or 64
+  while i <= maxIndex do
+    local texture, stacks, dtype, auraSpellID, liveDuration, liveExpires, source, auraName
+    if snapshot then
+      local entry = snapshot.entries[i]
+      if not entry then break end
+      texture = entry[1]
+      stacks = entry[2]
+      dtype = entry[3]
+      auraSpellID = entry[4]
+      liveDuration = entry[5]
+      liveExpires = entry[6]
+      source = entry[7]
+      auraName = entry[10]
+    else
+      texture, stacks, dtype, auraSpellID, liveDuration, liveExpires, source = BNP:_ReadClassicDebuff(unit, i)
+      if not texture then break end
+      if auraSpellID and SpellInfo then auraName = SpellInfo(auraSpellID) end
+    end
 
-    if auraSpellID then
+    -- If ClassicAPI knows another unit cast this aura, it cannot confirm our
+    -- pending cast. Unknown source remains a valid fallback for triggered
+    -- effects whose caster cannot be reconstructed from packets.
+    local knownForeign = BNP:_IsKnownForeignClassicAuraSource(source)
+
+    if auraSpellID and not knownForeign then
       if auraSpellID == castSpellID or DefHasSpellID(def, auraSpellID) then
-        return auraSpellID, texture, tonumber(stacks) or 0
+        return auraSpellID, texture, tonumber(stacks) or 0, tonumber(liveDuration), tonumber(liveExpires), BNP:_IsOwnClassicAuraSource(source)
       end
 
-      local auraName = SpellInfo and SpellInfo(auraSpellID) or nil
+      auraName = auraName or (SpellInfo and SpellInfo(auraSpellID) or nil)
       if NameMatches(def, auraName) then
-        return auraSpellID, texture, tonumber(stacks) or 0
+        return auraSpellID, texture, tonumber(stacks) or 0, tonumber(liveDuration), tonumber(liveExpires), BNP:_IsOwnClassicAuraSource(source)
       end
     end
 
-    if texture and def.textureMatch and string.find(string.lower(texture), def.textureMatch) then
-      return auraSpellID or castSpellID, texture, tonumber(stacks) or 0
+    if not knownForeign and texture and def.textureMatch and string.find(string.lower(texture), def.textureMatch) then
+      return auraSpellID or castSpellID, texture, tonumber(stacks) or 0, tonumber(liveDuration), tonumber(liveExpires), BNP:_IsOwnClassicAuraSource(source)
     end
 
     i = i + 1
@@ -1378,13 +1533,29 @@ local function CommitPendingAura(guid, key, pending, unit)
   cache._nextOrder = (cache._nextOrder or 0) + 1
   local aura = cache[key] or {}
   aura.order = cache._nextOrder
-  aura.duration = pending.duration
-  aura.expires = GetTime() + pending.duration
+  local commitNow = GetTime()
+  local liveDuration = tonumber(pending.liveDuration)
+  local liveExpires = tonumber(pending.liveExpires)
+  aura.duration = (liveDuration and liveDuration > 0 and liveDuration) or pending.duration
+  if liveExpires and liveExpires > commitNow then
+    aura.expires = liveExpires
+    aura.classicAPITiming = true
+  else
+    aura.expires = commitNow + aura.duration
+    aura.classicAPITiming = nil
+  end
   aura.spellID = pending.spellID
   aura.texture = pending.texture or def.texture
   aura.stacks = tonumber(pending.stacks) or 0
-  aura.confirmedAt = GetTime()
+  aura.confirmedAt = commitNow
   aura.missingScans = nil
+  if pending.sourceVerified then
+    aura.classicAPISourceVerified = true
+  elseif pending.liveConfirmed then
+    -- Do not erase a previous verified source on a refresh whose source cache
+    -- is temporarily unknown.
+    aura.classicAPISourceVerified = aura.classicAPISourceVerified or nil
+  end
 
   if pending.liveConfirmed then
     aura.castPrimary = nil
@@ -1406,7 +1577,7 @@ local function CommitPendingAura(guid, key, pending, unit)
   RaidTrace("CONFIRM", guid, key, aura.spellID)
 end
 
-local function ConfirmPendingForUnit(unit, guid, now)
+local function ConfirmPendingForUnit(unit, guid, now, snapshot)
   if not unit or not guid then return end
   local pendingForGUID = BNP.pendingAuras[guid]
   if not pendingForGUID then return end
@@ -1440,7 +1611,7 @@ local function ConfirmPendingForUnit(unit, guid, now)
           pendingForGUID[key] = nil
         end
       else
-        local auraSpellID, auraTexture, auraStacks = FindMatchingAuraOnUnit(unit, pending.def, pending.spellID)
+        local auraSpellID, auraTexture, auraStacks, liveDuration, liveExpires, sourceVerified = FindMatchingAuraOnUnit(unit, pending.def, pending.spellID, snapshot)
         if auraSpellID then
           local confirmed = {
             def = pending.def,
@@ -1449,6 +1620,9 @@ local function ConfirmPendingForUnit(unit, guid, now)
             duration = pending.duration,
             created = pending.created,
             stacks = auraStacks or 0,
+            liveDuration = liveDuration,
+            liveExpires = liveExpires,
+            sourceVerified = sourceVerified,
             liveConfirmed = true,
           }
           CommitPendingAura(guid, key, confirmed, unit)
@@ -1494,12 +1668,12 @@ local function QueueAoEAura(def, spellID, texture, duration)
   }
 end
 
-local function ConfirmAoEAurasOnUnit(unit, guid)
+local function ConfirmAoEAurasOnUnit(unit, guid, snapshot)
   if not unit or not guid then return end
   local key, pending
   for key, pending in pairs(BNP.pendingAoEAuras) do
     if type(pending) == "table" then
-      local auraSpellID, auraTexture, auraStacks = FindMatchingAuraOnUnit(unit, pending.def, pending.spellID)
+      local auraSpellID, auraTexture, auraStacks, liveDuration, liveExpires, sourceVerified = FindMatchingAuraOnUnit(unit, pending.def, pending.spellID, snapshot)
       if auraSpellID then
         CommitPendingAura(guid, pending.def.key, {
           def = pending.def,
@@ -1508,6 +1682,9 @@ local function ConfirmAoEAurasOnUnit(unit, guid)
           duration = pending.duration,
           created = pending.created,
           stacks = auraStacks or 0,
+          liveDuration = liveDuration,
+          liveExpires = liveExpires,
+          sourceVerified = sourceVerified,
           liveConfirmed = true,
         }, unit)
       end
@@ -1858,27 +2035,61 @@ local function CaptureLiveDebuffSnapshot(unit, now)
 
   snap.time = now or GetTime()
 
-  for i = 1, 64 do
-    local a1, a2, a3, a4, a5, a6, a7, a8, a9, a10 = UnitDebuff(unit, i)
-    if not a1 then break end
+  -- ClassicAPI v1.15.6 fast path. GetAuraSlots fills our reusable scratch
+  -- table and UnitAuraBySlot returns positional values, so a full harmful-aura
+  -- snapshot creates no per-aura tables and walks the descriptor array once.
+  if BNP._ClassicGetAuraSlots and BNP._ClassicUnitAuraBySlot then
+    local slots = BNP._ClassicAuraSlotScratch
+    local _, slotCount = BNP._ClassicGetAuraSlots(unit, "HARMFUL", nil, nil, slots)
+    slotCount = tonumber(slotCount) or 0
 
-    count = count + 1
-    local entry = entries[count]
-    if not entry then
-      entry = {}
-      entries[count] = entry
+    for i = 1, slotCount do
+      local auraName, texture, stacks, dtype, duration, expirationTime, source,
+        isStealable, nameplateShowPersonal, auraSpellID =
+          BNP._ClassicUnitAuraBySlot(unit, slots[i])
+      if auraName then
+        count = count + 1
+        local entry = entries[count]
+        if not entry then
+          entry = {}
+          entries[count] = entry
+        end
+
+        entry[1] = texture
+        entry[2] = stacks
+        entry[3] = dtype
+        entry[4] = auraSpellID
+        entry[5] = duration
+        entry[6] = expirationTime
+        entry[7] = source
+        entry[8] = isStealable
+        entry[9] = nameplateShowPersonal
+        entry[10] = auraName
+      end
     end
+  else
+    for i = 1, 64 do
+      local a1, a2, a3, a4, a5, a6, a7, a8, a9, a10 = BNP:_ReadClassicDebuff(unit, i)
+      if not a1 then break end
 
-    entry[1] = a1
-    entry[2] = a2
-    entry[3] = a3
-    entry[4] = a4
-    entry[5] = a5
-    entry[6] = a6
-    entry[7] = a7
-    entry[8] = a8
-    entry[9] = a9
-    entry[10] = a10
+      count = count + 1
+      local entry = entries[count]
+      if not entry then
+        entry = {}
+        entries[count] = entry
+      end
+
+      entry[1] = a1
+      entry[2] = a2
+      entry[3] = a3
+      entry[4] = a4
+      entry[5] = a5
+      entry[6] = a6
+      entry[7] = a7
+      entry[8] = a8
+      entry[9] = a9
+      entry[10] = a10
+    end
   end
 
   snap.count = count
@@ -1886,22 +2097,22 @@ local function CaptureLiveDebuffSnapshot(unit, now)
 end
 
 local function ClassicAPIAuraDataAvailable()
-  return type(C_UnitAuras) == "table" and type(C_UnitAuras.GetDebuffDataByIndex) == "function"
+  return type(BNP._ClassicAuraUnitDebuff) == "function"
 end
 
--- ClassicAPI exposes the real hostile-aura duration and absolute expiration.
--- Use it only for the isolated shared Shadow Vulnerability path; all normal own
--- debuffs keep their existing proven tracking pipeline unchanged.
+-- ClassicAPI exposes hostile aura identity from the real HARMFUL descriptor
+-- set (including Turtle debuffs spilled into free buff slots), plus best-effort
+-- source/timing data.  The positional UnitDebuff form allocates no AuraData
+-- tables, so it is safe to use in the throttled nameplate scan.
 local function FindClassicAPISharedAura(unit, def)
   if not ClassicAPIAuraDataAvailable() then return nil, nil, nil, nil, nil, false end
 
   local i
   for i = 1, 64 do
-    local ok, aura = pcall(C_UnitAuras.GetDebuffDataByIndex, unit, i)
-    if not ok then return nil, nil, nil, nil, nil, false end
-    if not aura then break end
+    local texture, stacks, dtype, spellID, duration, expires, source,
+      isStealable, nameplateShowPersonal, auraName = BNP:_ReadClassicDebuff(unit, i)
+    if not texture then break end
 
-    local spellID = tonumber(aura.spellId or aura.spellID)
     local matches = false
     if def.sharedSpellIDs and spellID then
       local _, knownID
@@ -1912,53 +2123,77 @@ local function FindClassicAPISharedAura(unit, def)
         end
       end
     end
-    if not matches and aura.name then matches = NameMatches(def, aura.name) end
+    if not matches and def.spellIDs and spellID then
+      local _, knownID
+      for _, knownID in ipairs(def.spellIDs) do
+        if spellID == knownID then
+          matches = true
+          break
+        end
+      end
+    end
+    if not matches and auraName then matches = NameMatches(def, auraName) end
 
     if matches then
-      return spellID, aura.icon, tonumber(aura.duration), tonumber(aura.expirationTime),
-        tonumber(aura.applications) or 0, true
+      return spellID, texture, tonumber(duration), tonumber(expires),
+        tonumber(stacks) or 0, true
     end
   end
 
-  -- A successful empty ClassicAPI scan is authoritative for absence. The
-  -- existing short missing grace protects against transient token updates.
   return nil, nil, nil, nil, nil, true
 end
 
 local function FindSharedAuraOnUnit(unit, def, snapshot)
   if not unit or not def then return nil, nil, nil, nil, nil, false end
 
-  if def.key == "shadow_vulnerability" then
+  -- Event-driven ClassicAPI callers already captured the exact harmful-aura
+  -- slots once. Consume that snapshot directly so shared auras do not trigger
+  -- a second UnitDebuff scan or temporary timing tables.
+  if snapshot then
+    local i
+    for i = 1, snapshot.count do
+      local entry = snapshot.entries[i]
+      if not entry then break end
+      local texture = entry[1]
+      local auraSpellID = entry[4]
+      local auraName = entry[10]
+      local sharedMatches = nil
+
+      if def.sharedSpellIDs and auraSpellID then
+        sharedMatches = false
+        local _, sharedSpellID
+        for _, sharedSpellID in ipairs(def.sharedSpellIDs) do
+          if auraSpellID == sharedSpellID then
+            sharedMatches = true
+            break
+          end
+        end
+      end
+
+      if sharedMatches == true or (sharedMatches == nil and AuraMatches(def, auraName, texture)) then
+        return auraSpellID, texture, tonumber(entry[5]), tonumber(entry[6]),
+          tonumber(entry[2]) or 0, true
+      end
+    end
+    return nil, nil, nil, nil, nil, true
+  end
+
+  if def.shared then
     local spellID, texture, duration, expires, stacks, authoritative =
       FindClassicAPISharedAura(unit, def)
     if authoritative then return spellID, texture, duration, expires, stacks, true end
   end
 
-  local maxIndex = snapshot and snapshot.count or 64
-  local now = snapshot and snapshot.time or GetTime()
+  local now = GetTime()
   local i
-  for i = 1, maxIndex do
-    local a1, a2, a3, a4, a5, a6, a7, a8, a9, a10
-
-    if snapshot then
-      local entry = snapshot.entries[i]
-      if not entry then break end
-      a1, a2, a3, a4, a5, a6, a7, a8, a9, a10 =
-        entry[1], entry[2], entry[3], entry[4], entry[5],
-        entry[6], entry[7], entry[8], entry[9], entry[10]
-    else
-      a1, a2, a3, a4, a5, a6, a7, a8, a9, a10 = UnitDebuff(unit, i)
-      if not a1 then break end
-    end
+  for i = 1, 64 do
+    local a1, a2, a3, a4, a5, a6, a7, a8, a9, a10 = BNP:_ReadClassicDebuff(unit, i)
+    if not a1 then break end
 
     local texture = a1
     local auraSpellID = a4
-    if not texture then break end
-
     local auraName = nil
-    if auraSpellID and SpellInfo then
-      auraName = SpellInfo(auraSpellID)
-    end
+    if auraSpellID and SpellInfo then auraName = SpellInfo(auraSpellID) end
 
     local sharedMatches = nil
     if def.sharedSpellIDs and auraSpellID then
@@ -1975,8 +2210,9 @@ local function FindSharedAuraOnUnit(unit, def, snapshot)
     -- Some different class talents use the same localized aura name. Shared
     -- effects may therefore opt into exact aura IDs instead of name matching.
     if sharedMatches == true or (sharedMatches == nil and AuraMatches(def, auraName, texture)) then
-      -- SuperWoW/extended clients may append duration/expiration data.
-      -- Probe plausible numeric return pairs without assuming one exact fork.
+      -- Legacy/SuperWoW fallback: probe plausible numeric return pairs without
+      -- assuming one exact fork. This branch is not used by the v1.15.6 event
+      -- path, so its compatibility behavior stays unchanged.
       local duration, expires
       local vals = { a5, a6, a7, a8, a9, a10 }
       local n
@@ -2000,7 +2236,7 @@ end
 
 local SV_SHARED_MISSING_GRACE = 0.45
 
-local function SyncShadowVulnerabilityPresence(unit, guid, now, def, auraSpellID, texture, liveStacks, liveDuration, liveExpires, classicAPIAuthoritative)
+local function SyncShadowVulnerabilityPresence(unit, guid, now, def, auraSpellID, texture, liveStacks, liveDuration, liveExpires, classicAPIAuthoritative, eventAuthoritative)
   local cache = BNP.guidAuras[guid]
   local state = BNP.svStateByGUID[guid]
 
@@ -2101,7 +2337,7 @@ local function SyncShadowVulnerabilityPresence(unit, guid, now, def, auraSpellID
 
   -- One empty SuperWoW/UnitDebuff snapshot is not authoritative. Only remove
   -- the shared state after no token has positively seen it for a short grace.
-  if state and now - (state.lastSeen or 0) >= SV_SHARED_MISSING_GRACE then
+  if state and (eventAuthoritative or now - (state.lastSeen or 0) >= SV_SHARED_MISSING_GRACE) then
     BNP.svStateByGUID[guid] = nil
     BNP.svExpiryByGUID[guid] = nil
     if BNP.svRenderRevisionByGUID then BNP.svRenderRevisionByGUID[guid] = nil end
@@ -2109,7 +2345,7 @@ local function SyncShadowVulnerabilityPresence(unit, guid, now, def, auraSpellID
   end
 end
 
-local function SyncSharedAuras(unit, guid, now, snapshot)
+local function SyncSharedAuras(unit, guid, now, snapshot, eventAuthoritative)
   if not unit or not guid then return end
 
   local _, def
@@ -2123,7 +2359,7 @@ local function SyncSharedAuras(unit, guid, now, snapshot)
       if def.key == "shadow_vulnerability" then
         SyncShadowVulnerabilityPresence(
           unit, guid, now, def, auraSpellID, texture, liveStacks, liveDuration,
-          liveExpires, classicAPIAuthoritative
+          liveExpires, classicAPIAuthoritative, eventAuthoritative
         )
       else
         local cache = BNP.guidAuras[guid]
@@ -2174,7 +2410,7 @@ local function SyncSharedAuras(unit, guid, now, snapshot)
         elseif cache and cache[def.key] and cache[def.key].sharedLive then
           local aura = cache[def.key]
           local lastSeen = aura.sharedLastSeen or aura.confirmedAt or 0
-          if now - lastSeen >= 0.40 then cache[def.key] = nil end
+          if eventAuthoritative or now - lastSeen >= 0.40 then cache[def.key] = nil end
         end
       end
     end
@@ -2390,7 +2626,7 @@ end
 local FOREIGN_CC_SEEN = {}
 local foreignCCSeenGeneration = 0
 
-local function SyncForeignCCs(unit, guid, now)
+local function SyncForeignCCs(unit, guid, now, snapshot, eventAuthoritative)
   if not unit or not guid then return end
   if not WantsForeignCCs() then
     BNP.guidLiveCCs[guid] = nil
@@ -2401,9 +2637,17 @@ local function SyncForeignCCs(unit, guid, now)
   local seenGeneration = foreignCCSeenGeneration
   local live = BNP.guidLiveCCs[guid]
   local i
-  for i = 1, 64 do
-    local texture, stacks, dtype, auraSpellID = UnitDebuff(unit, i)
-    if not texture then break end
+  local maxIndex = snapshot and snapshot.count or 64
+  for i = 1, maxIndex do
+    local texture, stacks, dtype, auraSpellID
+    if snapshot then
+      local entry = snapshot.entries[i]
+      if not entry then break end
+      texture, stacks, dtype, auraSpellID = entry[1], entry[2], entry[3], entry[4]
+    else
+      texture, stacks, dtype, auraSpellID = BNP:_ReadClassicDebuff(unit, i)
+      if not texture then break end
+    end
 
     local ccDef = ResolveGlobalCCDef(auraSpellID, texture)
     if ccDef then
@@ -2441,7 +2685,7 @@ local function SyncForeignCCs(unit, guid, now)
         -- A single empty projected UnitDebuff scan is common with tightly
         -- stacked raid nameplates. Keep the last positive CC sighting through
         -- two misses so foreign Banish/CC does not visibly blink.
-        if aura.missingScans >= 3 and now - (aura.lastSeen or 0) >= 0.40 then
+        if eventAuthoritative or (aura.missingScans >= 3 and now - (aura.lastSeen or 0) >= 0.40) then
           live[key] = nil
         end
       else
@@ -2475,6 +2719,10 @@ local function FormatCCTimer(remaining)
   return tostring(math.ceil(remaining))
 end
 
+BNP._AuraEntryOrderLess = BNP._AuraEntryOrderLess or function(a, b)
+  return (a.aura.order or a.aura.firstSeen or 0) < (b.aura.order or b.aura.firstSeen or 0)
+end
+
 local function UpdateCCRow(plate, guid, cache, now)
   if not UseDedicatedCCContainer()
     or (BNP.AreCrowdControlEnabled and not BNP:AreCrowdControlEnabled()) then
@@ -2497,7 +2745,13 @@ local function UpdateCCRow(plate, guid, cache, now)
   local oldCount = table.getn(active)
   for i = 1, oldCount do active[i] = nil end
   local count = 0
-  local seenOwn = {}
+  local seenOwn = container.BNPSeenOwnCC
+  if not seenOwn then
+    seenOwn = {}
+    container.BNPSeenOwnCC = seenOwn
+  end
+  container.BNPSeenOwnCCGeneration = (container.BNPSeenOwnCCGeneration or 0) + 1
+  local seenOwnGeneration = container.BNPSeenOwnCCGeneration
 
   local _, ccDef
   for _, ccDef in ipairs(AURA_DEFS) do
@@ -2513,7 +2767,7 @@ local function UpdateCCRow(plate, guid, cache, now)
           entry.def = ccDef
           entry.aura = aura
           entry.remaining = remaining
-          seenOwn[ccDef.key] = true
+          seenOwn[ccDef.key] = seenOwnGeneration
         end
       end
     end
@@ -2524,7 +2778,7 @@ local function UpdateCCRow(plate, guid, cache, now)
     local key, aura
     for key, aura in pairs(live or {}) do
       if count >= MAX_VISIBLE_ICONS then break end
-      if aura.def and not seenOwn[key] and now - (aura.lastSeen or 0) <= 0.60 then
+      if aura.def and seenOwn[key] ~= seenOwnGeneration and now - (aura.lastSeen or 0) <= 0.60 then
         count = count + 1
         local entry = pool[count]
         active[count] = entry
@@ -2535,9 +2789,7 @@ local function UpdateCCRow(plate, guid, cache, now)
     end
   end
 
-  table.sort(active, function(a, b)
-    return (a.aura.order or a.aura.firstSeen or 0) < (b.aura.order or b.aura.firstSeen or 0)
-  end)
+  table.sort(active, BNP._AuraEntryOrderLess)
 
   local visibleCount = table.getn(active)
   local iconSize = GetCCIconSize()
@@ -2577,9 +2829,10 @@ local function UpdateCCRow(plate, guid, cache, now)
 end
 
 local REMOVAL_PRESENT = {}
+BNP._RemovalPresentSafe = BNP._RemovalPresentSafe or {}
 local removalPresentGeneration = 0
 
-local function SyncAuraRemoval(unit, guid, now, snapshot, currentTargetGUID)
+local function SyncAuraRemoval(unit, guid, now, snapshot, currentTargetGUID, eventAuthoritative)
   if not unit or not guid then return end
   if AuraCacheProtected(guid, now) then return end
   local cache = BNP.guidAuras[guid]
@@ -2590,18 +2843,27 @@ local function SyncAuraRemoval(unit, guid, now, snapshot, currentTargetGUID)
   local i
   local maxIndex = snapshot and snapshot.count or 64
   for i = 1, maxIndex do
-    local texture, stacks, dtype, auraSpellID
+    local texture, stacks, dtype, auraSpellID, source
     if snapshot then
       local entry = snapshot.entries[i]
       if not entry then break end
-      texture, stacks, dtype, auraSpellID = entry[1], entry[2], entry[3], entry[4]
+      texture, stacks, dtype, auraSpellID, source = entry[1], entry[2], entry[3], entry[4], entry[7]
     else
-      texture, stacks, dtype, auraSpellID = UnitDebuff(unit, i)
+      local duration, expirationTime
+      texture, stacks, dtype, auraSpellID, duration, expirationTime, source = BNP:_ReadClassicDebuff(unit, i)
       if not texture then break end
     end
 
     if auraSpellID then
       REMOVAL_PRESENT[auraSpellID] = presentGeneration
+
+      -- For a timer previously confirmed with a known local source, a live
+      -- aura is safe when it is still ours OR ClassicAPI temporarily lost the
+      -- source metadata.  A known foreign source alone is not enough to keep
+      -- our timer alive.
+      if not BNP:_IsKnownForeignClassicAuraSource(source) then
+        BNP._RemovalPresentSafe[auraSpellID] = presentGeneration
+      end
 
       local trackedKey, trackedAura
       for trackedKey, trackedAura in pairs(cache) do
@@ -2623,7 +2885,7 @@ local function SyncAuraRemoval(unit, guid, now, snapshot, currentTargetGUID)
 
   local key, aura
   for key, aura in pairs(cache) do
-    if type(aura) == "table" and aura.spellID and aura.expires and key ~= "shadow_vulnerability" then
+    if type(aura) == "table" and aura.spellID and aura.expires and key ~= "shadow_vulnerability" and not aura.sharedLive then
       -- Give the client a tiny grace period immediately after confirmation so
       -- transient aura-list updates cannot remove a freshly-landed effect.
       local age = now - (aura.confirmedAt or 0)
@@ -2644,7 +2906,8 @@ local function SyncAuraRemoval(unit, guid, now, snapshot, currentTargetGUID)
         and currentTargetGUID and currentTargetGUID == guid
 
       if age >= REMOVAL_GRACE then
-        if REMOVAL_PRESENT[aura.spellID] == presentGeneration then
+        local presentMap = aura.classicAPISourceVerified and BNP._RemovalPresentSafe or REMOVAL_PRESENT
+        if presentMap[aura.spellID] == presentGeneration then
           -- Positive live sighting upgrades a CAST-seeded timer. Once upgraded,
           -- normal dispel/early-removal logic is safe again.
           aura.missingScans = nil
@@ -2655,6 +2918,13 @@ local function SyncAuraRemoval(unit, guid, now, snapshot, currentTargetGUID)
             aura.liveConfirmed = true
             BNP:ResolveNewAuraCastAttempt(guid, key)
           end
+        elseif eventAuthoritative then
+          -- NAME_PLATE UNIT_AURA + GetAuraSlots/UnitAuraBySlot is an exact
+          -- snapshot for this nameplateN token. Unlike old projected SuperWoW
+          -- tokens, one missing aura here is authoritative and needs no
+          -- multi-scan anti-flicker grace.
+          RaidTrace("EVENT_REMOVE", guid, key, aura.spellID)
+          cache[key] = nil
         elseif channelRemoval then
           RaidTrace("CHANNEL_REMOVE", guid, key, aura.spellID)
           cache[key] = nil
@@ -2764,6 +3034,23 @@ local function GetStablePlateGUID(plate, now)
   -- Exact current-target frame identity always wins over projected token data.
   local exactTargetGUID = PinExactTargetPlate(plate, now)
   if exactTargetGUID then return exactTargetGUID end
+
+  -- ClassicAPI nameplateN identity is exact, so never run it through the old
+  -- same-name GUID debounce that exists only for transient SuperWoW tokens.
+  -- Trusting it immediately prevents a recycled same-name plate from showing
+  -- the previous mob's aura cache for several renderer ticks.
+  if plate.BNPClassicUnitToken and BNP._ClassicUnitGUID then
+    local classicGUID = BNP._ClassicUnitGUID(plate.BNPClassicUnitToken)
+    if classicGUID then
+      plate.BNPClassicGUID = classicGUID
+      plate.BNPAuraGUIDStable = classicGUID
+      plate.BNPAuraGUIDCandidate = classicGUID
+      plate.BNPAuraGUIDCandidateCount = AURA_GUID_SWITCH_CONFIRM_UPDATES
+      plate.BNPAuraGUIDLastGoodAt = now
+      plate.BNPAuraForceFreshIdentity = nil
+      return classicGUID
+    end
+  end
 
   local guid = GetPlateGUID(plate)
   local stable = plate.BNPAuraGUIDStable
@@ -2961,9 +3248,7 @@ local function UpdatePlate(plate, now)
   end
 
   if activeCount > 1 then
-    table.sort(active, function(a, b)
-      return (a.aura.order or 0) < (b.aura.order or 0)
-    end)
+    table.sort(active, BNP._AuraEntryOrderLess)
   end
 
   local visibleCount = activeCount
@@ -3063,6 +3348,125 @@ local function UpdatePlate(plate, now)
 end
 
 
+-- ClassicAPI v1.15.6 event-driven aura bridge -------------------------------
+-- Each visible plate gets one lightweight UNIT_AURA watcher filtered to its
+-- exact nameplateN token. Aura state is scanned only when that unit actually
+-- changes, using GetAuraSlots + UnitAuraBySlot with reusable tables.
+function BNP:_ClassicAuraEventsReady()
+  return self._ClassicGetNamePlateForUnit
+    and self._ClassicGetAuraSlots
+    and self._ClassicUnitAuraBySlot
+    and self._ClassicUnitGUID
+end
+
+function BNP:_ReleaseClassicAuraWatcher(plate, token)
+  if not plate then return end
+  local watcher = plate.BNPClassicAuraWatcher
+  if not watcher then
+    plate.BNPClassicAuraEventDriven = nil
+    return
+  end
+
+  if token and watcher.BNPToken and watcher.BNPToken ~= token then return end
+  watcher:UnregisterEvent("UNIT_AURA")
+  watcher.BNPToken = nil
+  plate.BNPClassicAuraEventDriven = nil
+end
+
+function BNP:_HandleClassicUnitAura(token, plate)
+  if not self:_ClassicAuraEventsReady() then return end
+  if not token or not plate or not UnitExists(token) then return end
+
+  -- Guard against a recycled watcher/plate. The v1.15.6 removed-event fix
+  -- keeps this mapping valid through NAME_PLATE_UNIT_REMOVED, and on normal
+  -- UNIT_AURA it must resolve back to the same live frame.
+  local mappedPlate = self._ClassicGetNamePlateForUnit(token)
+  if mappedPlate ~= plate then return end
+
+  local guid = self._ClassicUnitGUID(token)
+  if not guid then return end
+  plate.BNPClassicGUID = guid
+
+  local now = GetTime()
+  if HarmfulAuraSuppressed(guid, now) then
+    ClearHarmfulAuraStateOnly(guid)
+    UpdatePlate(plate, now)
+    return
+  end
+
+  local snapshot = CaptureLiveDebuffSnapshot(token, now)
+
+  -- Pending own casts and AoE applications consume the same snapshot instead
+  -- of re-walking the aura descriptor list.
+  ConfirmPendingForUnit(token, guid, now, snapshot)
+  if HasPendingAoEAuras() then
+    ConfirmAoEAurasOnUnit(token, guid, snapshot)
+  end
+
+  -- Shared effects, early removals and optional foreign CC all reconcile from
+  -- this exact event snapshot. eventAuthoritative=true removes the old
+  -- multi-miss protection that was only required for projected SuperWoW units.
+  SyncSharedAuras(token, guid, now, snapshot, true)
+  if BNP.guidAuras[guid] then
+    SyncAuraRemoval(token, guid, now, snapshot, GetTargetGUID(), true)
+  end
+  if WantsForeignCCs() then
+    SyncForeignCCs(token, guid, now, snapshot, true)
+  elseif BNP.guidLiveCCs then
+    BNP.guidLiveCCs[guid] = nil
+  end
+
+  plate.BNPClassicAuraLastEvent = now
+  UpdatePlate(plate, now)
+
+  -- Tiny diagnostics only; no per-event tables are created.
+  if not self.classicAuraStats then self.classicAuraStats = { events = 0, scans = 0 } end
+  self.classicAuraStats.events = (self.classicAuraStats.events or 0) + 1
+  self.classicAuraStats.scans = (self.classicAuraStats.scans or 0) + 1
+end
+
+function BNP:_EnsureClassicAuraWatcher(plate, token)
+  if not plate or not token or not self:_ClassicAuraEventsReady() then return end
+
+  local watcher = plate.BNPClassicAuraWatcher
+  if not watcher then
+    watcher = CreateFrame("Frame")
+    if not watcher.RegisterUnitEvent then return end
+    watcher.BNPPlate = plate
+    watcher:SetScript("OnEvent", function()
+      if event == "UNIT_AURA" and this.BNPToken and arg1 == this.BNPToken then
+        BNP:_HandleClassicUnitAura(this.BNPToken, this.BNPPlate)
+      end
+    end)
+    plate.BNPClassicAuraWatcher = watcher
+  end
+
+  if watcher.BNPToken ~= token or not plate.BNPClassicAuraEventDriven then
+    watcher:UnregisterEvent("UNIT_AURA")
+    watcher.BNPToken = token
+    watcher.BNPPlate = plate
+    local registered = watcher:RegisterUnitEvent("UNIT_AURA", token)
+    if registered then
+      plate.BNPClassicAuraEventDriven = true
+    else
+      plate.BNPClassicAuraEventDriven = nil
+      watcher.BNPToken = nil
+      return
+    end
+  end
+
+  -- NAME_PLATE_UNIT_ADDED may expose a unit that already has debuffs. Seed the
+  -- state once immediately instead of waiting for the next aura change.
+  self:_HandleClassicUnitAura(token, plate)
+end
+
+-- If the file loaded while plates were already visible (reload/UI restart),
+-- bind them now. Future plates are attached from _BindClassicPlateToken().
+if BNP:_ClassicAuraEventsReady() then
+  BNP:_RefreshClassicPlateTokens()
+end
+
+
 function BNP:RefreshAuraLayout(plate)
   if not plate then return end
   local auraSize = GetIconSize()
@@ -3141,7 +3545,18 @@ renderer:SetScript("OnUpdate", function()
   local hasPending = HasPendingAuras()
   local hasPendingAoE = HasPendingAoEAuras()
   local doTargetRemovalScan = removalElapsed >= REMOVAL_SCAN_INTERVAL
-  if doTargetRemovalScan then removalElapsed = 0 end
+  if doTargetRemovalScan then
+    removalElapsed = 0
+    -- If the target has a live ClassicAPI nameplate watcher, UNIT_AURA already
+    -- performs exact removal/shared synchronization. Do not duplicate that
+    -- destructive scan every 0.10s.
+    if BNP._ClassicGetNamePlateForUnit then
+      local exactTargetPlate = BNP._ClassicGetNamePlateForUnit("target")
+      if exactTargetPlate and exactTargetPlate.BNPClassicAuraEventDriven then
+        doTargetRemovalScan = false
+      end
+    end
+  end
 
   -- Non-target destructive scans used to hit every visible plate in one 0.10s
   -- burst. Alternate two buckets on the existing 0.05s renderer tick instead:
@@ -3181,7 +3596,8 @@ renderer:SetScript("OnUpdate", function()
   -- The normal renderer always runs. Extra GUID/token/UnitDebuff work is only
   -- performed while pending casts exist or during the throttled removal scan.
   for plate in pairs(BNP.plates) do
-    local plateRemovalDue = plate:IsShown() and GetRemovalScanBucket(plate) == removalScanBucket
+    local plateRemovalDue = plate:IsShown() and not plate.BNPClassicAuraEventDriven
+      and GetRemovalScanBucket(plate) == removalScanBucket
     if plate:IsShown() and (hasPending or hasPendingAoE or plateRemovalDue) then
       local guid = GetPlateGUID(plate)
       local token = GetUnitTokenForPlate(plate)
@@ -3275,13 +3691,21 @@ foreignCCScanner:SetScript("OnUpdate", function()
   local targetGUID = GetTargetGUID()
   if foreignCCTargetElapsed >= FOREIGN_CC_SCAN_INTERVAL then
     foreignCCTargetElapsed = 0
-    if targetGUID then pcall(SyncForeignCCs, "target", targetGUID, now) end
+    local targetEventDriven = false
+    if BNP._ClassicGetNamePlateForUnit then
+      local exactTargetPlate = BNP._ClassicGetNamePlateForUnit("target")
+      targetEventDriven = exactTargetPlate and exactTargetPlate.BNPClassicAuraEventDriven and true or false
+    end
+    if targetGUID and not targetEventDriven then
+      pcall(SyncForeignCCs, "target", targetGUID, now)
+    end
   end
 
   -- Same per-plate 0.15s cadence as before, split over two smaller passes.
   local plate
   for plate in pairs(BNP.plates or {}) do
-    if plate and plate:IsShown() and GetForeignCCScanBucket(plate) == foreignCCScanBucket then
+    if plate and plate:IsShown() and not plate.BNPClassicAuraEventDriven
+      and GetForeignCCScanBucket(plate) == foreignCCScanBucket then
       local guid = GetPlateGUID(plate)
       if guid and guid ~= targetGUID then
         local token = GetUnitTokenForPlate(plate)
@@ -3351,7 +3775,7 @@ local function SnapshotSVUnit(unit, guid, reason)
   if not unit then return end
   local i
   for i = 1, 64 do
-    local a1,a2,a3,a4,a5,a6,a7,a8,a9,a10 = UnitDebuff(unit, i)
+    local a1,a2,a3,a4,a5,a6,a7,a8,a9,a10 = BNP:_ReadClassicDebuff(unit, i)
     if not a1 then break end
     if IsShadowVulnerabilitySpellID(a4) then
       BNP.svProbe.last = {

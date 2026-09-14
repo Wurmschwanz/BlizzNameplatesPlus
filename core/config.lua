@@ -329,20 +329,21 @@ function BNP:IsTargetFocusEnabled()
   return not BNP_DB or BNP_DB.targetFocus ~= false
 end
 
+-- Shared immutable target colors. Keeping this table outside the getters avoids
+-- allocating two new color maps over and over from the per-frame target path.
+local TARGET_INDICATOR_COLORS = {
+  white  = { 1.00, 1.00, 1.00 },
+  gold   = { 1.00, 0.82, 0.10 },
+  blue   = { 0.25, 0.55, 1.00 },
+  green  = { 0.25, 1.00, 0.35 },
+  red    = { 1.00, 0.20, 0.20 },
+  purple = { 0.75, 0.35, 1.00 },
+  black  = { 0.00, 0.00, 0.00 },
+}
+
 function BNP:GetTargetGlowColor()
   local key = (BNP_DB and BNP_DB.targetGlowColor) or self.defaults.targetGlowColor or "white"
-
-  local colors = {
-    white  = { 1.00, 1.00, 1.00 },
-    gold   = { 1.00, 0.82, 0.10 },
-    blue   = { 0.25, 0.55, 1.00 },
-    green  = { 0.25, 1.00, 0.35 },
-    red    = { 1.00, 0.20, 0.20 },
-    purple = { 0.75, 0.35, 1.00 },
-    black  = { 0.00, 0.00, 0.00 },
-  }
-
-  local c = colors[key] or colors.white
+  local c = TARGET_INDICATOR_COLORS[key] or TARGET_INDICATOR_COLORS.white
   return c[1], c[2], c[3], key
 end
 
@@ -372,17 +373,7 @@ function BNP:GetTargetArrowColor()
     return r, g, b, key
   end
 
-  local colors = {
-    white  = { 1.00, 1.00, 1.00 },
-    gold   = { 1.00, 0.82, 0.10 },
-    blue   = { 0.25, 0.55, 1.00 },
-    green  = { 0.25, 1.00, 0.35 },
-    red    = { 1.00, 0.20, 0.20 },
-    purple = { 0.75, 0.35, 1.00 },
-    black  = { 0.00, 0.00, 0.00 },
-  }
-
-  local c = colors[key] or colors.white
+  local c = TARGET_INDICATOR_COLORS[key] or TARGET_INDICATOR_COLORS.white
   return c[1], c[2], c[3], key
 end
 

@@ -1,5 +1,5 @@
 BNP = BNP or {}
-BNP.version = "1.0.10"
+BNP.version = "1.0.10 ClassicAPI Event Test"
 BNP.plates = BNP.plates or {}
 BNP.detected = 0
 BNP.debugEnabled = false
@@ -27,7 +27,14 @@ eventFrame:SetScript("OnEvent", function()
 
   if CombatLogAdd and SpellInfo and classicNameplates then
     BNP:Print(BNP.version .. " loaded. SuperWoW + ClassicAPI nameplate tracking active.")
-    BNP:Print("Dragon command test build loaded.")
+    if C_UnitAuras and type(C_UnitAuras.GetAuraSlots) == "function"
+      and type(C_UnitAuras.UnitAuraBySlot) == "function" then
+      BNP:Print("ClassicAPI v1.15.6 aura bridge active: UNIT_AURA + allocation-free slot scans.")
+    elseif C_UnitAuras and type(C_UnitAuras.UnitDebuff) == "function" then
+      BNP:Print("ClassicAPI aura bridge active, but event-driven v1.15.6 features are unavailable.")
+    else
+      BNP:Print("ClassicAPI aura bridge unavailable; legacy UnitDebuff fallback active.")
+    end
     if ShaguTweaks then
       BNP:ApplyShaguTweaksCompatibility()
       local count = 0

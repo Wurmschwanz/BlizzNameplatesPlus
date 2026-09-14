@@ -130,13 +130,12 @@ local function BNP_UpdateEliteDragonPlate(plate, unit)
     classification = UnitClassification(token)
   end
 
-  local dragon = BNP_GetOrCreateAutoDragon(plate)
-  if not dragon then return end
-
   if classification == "elite" or classification == "worldboss" then
-    dragon:Show()
-  else
-    dragon:Hide()
+    -- Lazy creation: normal mobs do not need an elite dragon texture.
+    local dragon = BNP_GetOrCreateAutoDragon(plate)
+    if dragon then dragon:Show() end
+  elseif plate.BNPDirectDragonTestFrame then
+    plate.BNPDirectDragonTestFrame:Hide()
   end
 end
 
@@ -161,15 +160,15 @@ local function BNP_RunEliteAutoScan()
       end
       lastClass = tostring(classification or "nil")
 
-      local dragon = BNP_GetOrCreateAutoDragon(plate)
-      if dragon then
-        if classification == "elite" or classification == "worldboss" then
-          elite = elite + 1
+      if classification == "elite" or classification == "worldboss" then
+        elite = elite + 1
+        local dragon = BNP_GetOrCreateAutoDragon(plate)
+        if dragon then
           dragon:Show()
           shown = shown + 1
-        else
-          dragon:Hide()
         end
+      elseif plate.BNPDirectDragonTestFrame then
+        plate.BNPDirectDragonTestFrame:Hide()
       end
     elseif plate and plate.BNPDirectDragonTestFrame then
       plate.BNPDirectDragonTestFrame:Hide()
@@ -223,14 +222,15 @@ if addedOK or removedOK then
 end
 
 -- Apply immediately to any plates that were already visible when this module
--- loaded. Afterwards the 0.50s scan is only a safety net.
+-- loaded. Afterwards the 1.00s scan is only a safety net; OnShow and
+-- ClassicAPI events remain the instant paths.
 pcall(BNP_RunEliteAutoScan)
 
 local BNP_EliteAutoFrame = CreateFrame("Frame", nil, UIParent)
 BNP_EliteAutoFrame:SetScript("OnUpdate", function()
   local now = GetTime()
   if now < BNP_EliteAutoNextScan then return end
-  BNP_EliteAutoNextScan = now + 0.50
+  BNP_EliteAutoNextScan = now + 1.00
   BNP_EliteAutoState.ticks = BNP_EliteAutoState.ticks + 1
 
   local ok, err = pcall(BNP_RunEliteAutoScan)

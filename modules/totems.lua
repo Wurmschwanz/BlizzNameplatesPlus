@@ -69,20 +69,40 @@ local function AddName(def, name)
 end
 
 local definitionsResolved = false
+local TOTEM_NAME_LOOKUP = {}
+local function RebuildTotemNameLookup()
+  local key
+  for key in pairs(TOTEM_NAME_LOOKUP) do TOTEM_NAME_LOOKUP[key] = nil end
+
+  local i, n
+  for i = 1, table.getn(TOTEM_DEFS) do
+    local def = TOTEM_DEFS[i]
+    for n = 1, table.getn(def.names) do
+      local normalized = NormalizeTotemName(def.names[n])
+      if normalized then TOTEM_NAME_LOOKUP[normalized] = def end
+    end
+  end
+end
+
 local function ResolveDefinitions()
   if definitionsResolved then return end
   definitionsResolved = true
 
-  if not SpellInfo then return end
-  local i
-  for i = 1, table.getn(TOTEM_DEFS) do
-    local def = TOTEM_DEFS[i]
-    local ok, name, _, texture = pcall(SpellInfo, def.spellID)
-    if ok then
-      AddName(def, name)
-      if texture and texture ~= "" then def.texture = texture end
+  if SpellInfo then
+    local i
+    for i = 1, table.getn(TOTEM_DEFS) do
+      local def = TOTEM_DEFS[i]
+      local ok, name, _, texture = pcall(SpellInfo, def.spellID)
+      if ok then
+        AddName(def, name)
+        if texture and texture ~= "" then def.texture = texture end
+      end
     end
   end
+
+  -- Build once after localized spell names have been added. Normal nameplates
+  -- can then reject in O(1) instead of re-normalizing every known totem name.
+  RebuildTotemNameLookup()
 end
 
 local GENERIC_TOTEM_DEF = {
@@ -95,13 +115,8 @@ local function FindTotemDefinition(name)
   local normalized = NormalizeTotemName(name)
   if not normalized then return nil end
 
-  local i, n
-  for i = 1, table.getn(TOTEM_DEFS) do
-    local def = TOTEM_DEFS[i]
-    for n = 1, table.getn(def.names) do
-      if normalized == NormalizeTotemName(def.names[n]) then return def end
-    end
-  end
+  local known = TOTEM_NAME_LOOKUP[normalized]
+  if known then return known end
 
   -- Future/custom server totems still get icon-only treatment even when BNP
   -- does not yet know their exact spell icon. Only accept "totem" as a
@@ -327,14 +342,13 @@ end
 
 local function UpdateIndicator(plate, force)
   if not plate then return end
-  CreateIndicator(plate)
+
   local indicator = plate.BNPTotemIndicator
-  if not indicator then return end
 
-  ApplyIndicatorLayout(plate, force)
-
+  -- Disabled means zero detection/render work and, importantly, no indicator
+  -- frame needs to exist on ordinary nameplates.
   if not (BNP.AreTotemIndicatorsEnabled and BNP:AreTotemIndicatorsEnabled()) then
-    indicator:Hide()
+    if indicator then indicator:Hide() end
     RestoreTotemPlateVisuals(plate)
     plate.BNPTotemLastName = nil
     plate.BNPTotemLastKey = nil
@@ -344,26 +358,29 @@ local function UpdateIndicator(plate, force)
   ResolveDefinitions()
   local name = GetPlateName(plate)
 
-  -- Nameplate identity is stable most of the time. If the displayed name did
-  -- not change, reuse the previous totem decision and avoid UnitIsPlayer/name
-  -- normalization work on every 0.10s libnameplate update.
+  -- Nameplate identity is stable most of the time. Reuse the previous totem
+  -- decision and avoid normalization/player checks on every libnameplate tick.
   if not force and name == plate.BNPTotemLastName then
     if plate.BNPTotemLastKey then
-      if not indicator:IsShown() then indicator:Show() end
+      if not indicator then
+        CreateIndicator(plate)
+        indicator = plate.BNPTotemIndicator
+      end
+      InstallTotemVisualGuard(plate)
+      ApplyIndicatorLayout(plate, false)
+      if indicator and not indicator:IsShown() then indicator:Show() end
       SuppressTotemPlateVisuals(plate)
     else
-      if indicator:IsShown() then indicator:Hide() end
+      if indicator and indicator:IsShown() then indicator:Hide() end
       RestoreTotemPlateVisuals(plate)
     end
     return
   end
 
   -- Hard safety guard: a player nameplate can never be a shaman totem.
-  -- SuperWoW nameplate tokens make this check reliable in BGs and prevent
-  -- false positives even if a player deliberately uses a totem-like name.
   local token = plate.GetName and plate:GetName(1) or nil
   if token and UnitIsPlayer and UnitIsPlayer(token) then
-    indicator:Hide()
+    if indicator then indicator:Hide() end
     RestoreTotemPlateVisuals(plate)
     plate.BNPTotemLastName = name
     plate.BNPTotemLastKey = nil
@@ -375,10 +392,21 @@ local function UpdateIndicator(plate, force)
 
   local def = FindTotemDefinition(name)
   if not def then
-    indicator:Hide()
+    if indicator then indicator:Hide() end
     RestoreTotemPlateVisuals(plate)
     return
   end
+
+  -- Lazy creation: normal mobs never receive the replacement frame or the
+  -- per-frame visual guard. They are installed only after a real totem match.
+  if not indicator then
+    CreateIndicator(plate)
+    indicator = plate.BNPTotemIndicator
+  end
+  if not indicator then return end
+
+  InstallTotemVisualGuard(plate)
+  ApplyIndicatorLayout(plate, force)
 
   plate.BNPTotemLastKey = def.key
   indicator.texture:SetTexture(def.texture)
@@ -398,14 +426,13 @@ end
 BNP.TotemIndicatorDefinitions = TOTEM_DEFS
 
 table.insert(BNP.libnameplate.OnInit, function(plate)
-  CreateIndicator(plate)
-  InstallTotemVisualGuard(plate)
+  -- Hide cleanup is event-driven and cheap; the expensive per-frame visual
+  -- guard is installed lazily only if this plate is actually a totem.
   InstallTotemHideGuard(plate)
   UpdateIndicator(plate, true)
 end)
 
 table.insert(BNP.libnameplate.OnShow, function(plate)
-  InstallTotemVisualGuard(plate)
   InstallTotemHideGuard(plate)
   plate.BNPTotemLastName = nil
   plate.BNPTotemLastKey = nil
