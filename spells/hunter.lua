@@ -12,6 +12,8 @@ BNP.HunterAuras = {
     key = "explosive_trap_effect",
     names = { "Explosive Trap Effect" },
     duration = 20,
+    spellIDs = { 13812 },
+    aoe = true,
   },
   {
     key = "freezing_trap_effect",
