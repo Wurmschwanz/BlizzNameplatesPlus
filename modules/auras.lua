@@ -1133,8 +1133,10 @@ local STRICT_AURA_KEYS = {
   kick_silenced=true, crippling_poison=true, mind_numbing_poison=true,
   wound_poison=true, deadly_poison=true,
 
-  -- Druid CC / secondary effects
-  entangling_roots=true, bash=true, pounce=true, pounce_bleed=true,
+  -- Druid CC / secondary effects. Rake is also strict because UNIT_CASTEVENT
+  -- CAST fires before the melee hit result; requiring the real aura prevents
+  -- missed/dodged/parried/immune Rakes from creating a false bleed timer.
+  entangling_roots=true, bash=true, pounce=true, pounce_bleed=true, rake=true,
   hibernate=true, feral_charge_effect=true,
 
   -- Warrior CC / talent procs
