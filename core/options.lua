@@ -802,6 +802,16 @@ function BNP:CreateOptions()
   end)
   frame.iconSlider = icon
 
+  local auraFontSize = CreateSlider(aurasPage, "Aura Font Size", 6, 18, 1, -124, 28, 150)
+  auraFontSize:SetScript("OnValueChanged", function()
+    if not BNP_DB then return end
+    local value = math.floor(this:GetValue() + 0.5)
+    BNP_DB.auraFontSize = value
+    getglobal(this:GetName() .. "Text"):SetText("Aura Font Size: " .. value)
+    if BNP.RefreshAllAuraLayouts then BNP:RefreshAllAuraLayouts() end
+  end)
+  frame.auraFontSizeSlider = auraFontSize
+
   local debuffYOffset = CreateSlider(aurasPage, "Debuff Y Offset", -50, 50, 1, -78, 220, 150)
   debuffYOffset:SetScript("OnValueChanged", function()
     if not BNP_DB then return end
@@ -815,7 +825,7 @@ function BNP:CreateOptions()
   end)
   frame.debuffYOffsetSlider = debuffYOffset
 
-  local ccIcon = CreateSlider(aurasPage, "CC Icon Size", 12, 32, 1, -196, 28, 150)
+  local ccIcon = CreateSlider(aurasPage, "CC Icon Size", 12, 32, 1, -230, 28, 150)
   ccIcon:SetScript("OnValueChanged", function()
     if not BNP_DB then return end
     local value = math.floor(this:GetValue() + 0.5)
@@ -827,7 +837,7 @@ function BNP:CreateOptions()
   end)
   frame.ccIconSlider = ccIcon
 
-  local ccYOffset = CreateSlider(aurasPage, "CC Y Offset", -50, 50, 1, -196, 220, 150)
+  local ccYOffset = CreateSlider(aurasPage, "CC Y Offset", -50, 50, 1, -230, 220, 150)
   ccYOffset:SetScript("OnValueChanged", function()
     if not BNP_DB then return end
     local value = RoundSignedInteger(this:GetValue())
@@ -898,9 +908,9 @@ function BNP:CreateOptions()
   debuffPositionLabel:SetText("Debuff Position")
   frame.debuffPositionLabel = debuffPositionLabel
 
-  CreateSection(aurasPage, "Crowd Control", -122)
+  CreateSection(aurasPage, "Crowd Control", -156)
 
-  local crowdControl = CreateCheck(aurasPage, "Enable Crowd Control", -148, function()
+  local crowdControl = CreateCheck(aurasPage, "Enable Crowd Control", -182, function()
     BNP_DB.crowdControl = this:GetChecked() and true or false
     if BNP.RefreshDebuffVisibility then BNP:RefreshDebuffVisibility() end
     if BNP.RefreshAllImmunityLayouts then BNP:RefreshAllImmunityLayouts() end
@@ -910,7 +920,7 @@ function BNP:CreateOptions()
   frame.crowdControlCheck = crowdControl
 
   local ccPositionDropdown = CreateFrame("Frame", "BNPCCPositionDropdown", aurasPage, "UIDropDownMenuTemplate")
-  ccPositionDropdown:SetPoint("TOPLEFT", aurasPage, "TOPLEFT", 188, -142)
+  ccPositionDropdown:SetPoint("TOPLEFT", aurasPage, "TOPLEFT", 188, -176)
   UIDropDownMenu_SetWidth(92, ccPositionDropdown)
 
   local ccPositionLabels = {
@@ -951,7 +961,7 @@ function BNP:CreateOptions()
   ccPositionLabel:SetText("CC Position")
   frame.ccPositionLabel = ccPositionLabel
 
-  local separateCCRow = CreateCheck(aurasPage, "Display CCs in Separate Row", -230, function()
+  local separateCCRow = CreateCheck(aurasPage, "Display CCs in Separate Row", -264, function()
     BNP_DB.separateCCRow = this:GetChecked() and true or false
     if BNP.RefreshAllAuraLayouts then BNP:RefreshAllAuraLayouts() end
     if BNP.RefreshAllImmunityLayouts then BNP:RefreshAllImmunityLayouts() end
@@ -960,15 +970,15 @@ function BNP:CreateOptions()
   end, 42)
   frame.separateCCRowCheck = separateCCRow
 
-  local showOtherCCs = CreateCheck(aurasPage, "Show CCs from Other Players", -256, function()
+  local showOtherCCs = CreateCheck(aurasPage, "Show CCs from Other Players", -290, function()
     BNP_DB.showOtherCCs = this:GetChecked() and true or false
     if BNP.RefreshDebuffVisibility then BNP:RefreshDebuffVisibility() end
   end, 42)
   frame.showOtherCCsCheck = showOtherCCs
 
-  CreateSection(aurasPage, "Immunities / Important Buffs", -294)
+  CreateSection(aurasPage, "Immunities / Important Buffs", -328)
 
-  local pvpImmunities = CreateCheck(aurasPage, "Enable PvP Immunities", -320, function()
+  local pvpImmunities = CreateCheck(aurasPage, "Enable PvP Immunities", -354, function()
     BNP_DB.pvpImmunities = this:GetChecked() and true or false
     if BNP.RefreshImmunityVisibility then BNP:RefreshImmunityVisibility() end
     if frame.UpdateDependentControls then frame:UpdateDependentControls() end
@@ -977,7 +987,7 @@ function BNP:CreateOptions()
   frame.pvpImmunitiesCheck = pvpImmunities
 
   local immunityPositionDropdown = CreateFrame("Frame", "BNPImmunityPositionDropdown", aurasPage, "UIDropDownMenuTemplate")
-  immunityPositionDropdown:SetPoint("TOPLEFT", aurasPage, "TOPLEFT", 188, -314)
+  immunityPositionDropdown:SetPoint("TOPLEFT", aurasPage, "TOPLEFT", 188, -348)
   UIDropDownMenu_SetWidth(92, immunityPositionDropdown)
 
   local immunityPositionLabels = {
@@ -1016,7 +1026,7 @@ function BNP:CreateOptions()
   immunityPositionLabel:SetText("Immunity Position")
   frame.immunityPositionLabel = immunityPositionLabel
 
-  local immunityIcon = CreateSlider(aurasPage, "Immunity Icon Size", 12, 32, 1, -368, 28, 150)
+  local immunityIcon = CreateSlider(aurasPage, "Immunity Icon Size", 12, 32, 1, -402, 28, 150)
   immunityIcon:SetScript("OnValueChanged", function()
     if not BNP_DB then return end
     local value = math.floor(this:GetValue() + 0.5)
@@ -1027,7 +1037,7 @@ function BNP:CreateOptions()
   end)
   frame.immunityIconSlider = immunityIcon
 
-  local immunityYOffset = CreateSlider(aurasPage, "Immunity Y Offset", -50, 50, 1, -368, 220, 150)
+  local immunityYOffset = CreateSlider(aurasPage, "Immunity Y Offset", -50, 50, 1, -402, 220, 150)
   immunityYOffset:SetScript("OnValueChanged", function()
     if not BNP_DB then return end
     local value = RoundSignedInteger(this:GetValue())
@@ -1578,6 +1588,11 @@ function BNP:SyncOptions()
     getglobal(frame.nonTargetAlphaSlider:GetName() .. "Text"):SetText("Non-Target Alpha: " .. alphaPercent .. "%")
   end
   frame.iconSlider:SetValue(self:GetIconSize())
+  if frame.auraFontSizeSlider then
+    local auraFontSize = self:GetAuraFontSize()
+    frame.auraFontSizeSlider:SetValue(auraFontSize)
+    getglobal(frame.auraFontSizeSlider:GetName() .. "Text"):SetText("Aura Font Size: " .. auraFontSize)
+  end
   if frame.ccIconSlider then
     local ccSize = self:GetCCIconSize()
     frame.ccIconSlider:SetValue(ccSize)

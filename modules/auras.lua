@@ -442,16 +442,14 @@ local function CreateAuraIcon(parent, index)
   icon.texture = texture
 
   local timer = icon:CreateFontString(nil, "OVERLAY")
-  local timerSize = math.floor(((UI.TIMER_SIZE or 8) * size / (ICON_SIZE or 18)) + 0.5)
-  if timerSize < 6 then timerSize = 6 end
-  if timerSize > 14 then timerSize = 14 end
-  timer:SetFont(UI.TIMER_FONT or "Fonts\\FRIZQT__.TTF", timerSize, "OUTLINE")
+  local auraFontSize = (BNP.GetAuraFontSize and BNP:GetAuraFontSize()) or (UI.TIMER_SIZE or 8)
+  timer:SetFont(UI.TIMER_FONT or "Fonts\\FRIZQT__.TTF", auraFontSize, "OUTLINE")
   timer:SetPoint("CENTER", icon, "CENTER", UI.TIMER_OFFSET_X or 0, UI.TIMER_OFFSET_Y or 0)
   timer:SetTextColor(1, 1, 1)
   icon.timer = timer
 
   local stack = icon:CreateFontString(nil, "OVERLAY")
-  stack:SetFont(UI.TIMER_FONT or "Fonts\\FRIZQT__.TTF", 8, "OUTLINE")
+  stack:SetFont(UI.TIMER_FONT or "Fonts\\FRIZQT__.TTF", auraFontSize, "OUTLINE")
   stack:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", -1, 1)
   stack:SetTextColor(1, 1, 1)
   stack:SetText("")
@@ -2496,12 +2494,17 @@ local function ApplyIconDimensions(icon, size)
     icon:SetWidth(size)
     icon:SetHeight(size)
     icon.BNPLayoutSize = size
+  end
+
+  local auraFontSize = (BNP.GetAuraFontSize and BNP:GetAuraFontSize()) or (UI.TIMER_SIZE or 8)
+  if icon.BNPAuraFontSize ~= auraFontSize then
     if icon.timer then
-      local timerSize = math.floor(((UI.TIMER_SIZE or 8) * size / (ICON_SIZE or 18)) + 0.5)
-      if timerSize < 6 then timerSize = 6 end
-      if timerSize > 14 then timerSize = 14 end
-      icon.timer:SetFont(UI.TIMER_FONT or "Fonts\\FRIZQT__.TTF", timerSize, "OUTLINE")
+      icon.timer:SetFont(UI.TIMER_FONT or "Fonts\\FRIZQT__.TTF", auraFontSize, "OUTLINE")
     end
+    if icon.stack then
+      icon.stack:SetFont(UI.TIMER_FONT or "Fonts\\FRIZQT__.TTF", auraFontSize, "OUTLINE")
+    end
+    icon.BNPAuraFontSize = auraFontSize
   end
 end
 
