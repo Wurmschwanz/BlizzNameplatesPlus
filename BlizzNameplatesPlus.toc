@@ -3,7 +3,7 @@
 ## Notes: Lightweight personal debuffs and class colors for Blizzard nameplates. Requires SuperWoW and ClassicAPI.
 ## Author: Wurmschwanz; nameplate discovery inspired by Shagu's Vanilla projects
 ## OptionalDeps: ShaguTweaks
-## Version: 1.0.10
+## Version: 1.1.0
 ## SavedVariablesPerCharacter: BNP_DB
 
 core\core.lua

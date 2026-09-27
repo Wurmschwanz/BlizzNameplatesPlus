@@ -17,6 +17,8 @@ BNP.defaults = BNP.defaults or {
   ccPosition = "top",
   tankMode = false,
   invertTankColors = false,
+  invertTankAggroColor = { r = 1.00, g = 0.00, b = 0.00 },
+  invertTankNoAggroColor = { r = 0.00, g = 1.00, b = 0.00 },
   classColors = true,
   darkNameplateBorder = false,
   hideNameplateBorder = false,
@@ -46,11 +48,14 @@ BNP.defaults = BNP.defaults or {
   healthTextFontSize = 9,
   healthTextOutline = "outline",
   targetFocus = true,
-  targetGlowColor = "white",
+  targetGlowColor = "white", -- legacy migration key
+  targetColor = { r = 1.00, g = 1.00, b = 1.00 },
   targetGlowSize = 0,
   targetGlowOpacity = 1.0,
   targetArrows = false,
+  -- Legacy Arrow color keys are retained only for SavedVariables migration.
   targetArrowColor = "match",
+  targetArrowCustomColor = { r = 1.00, g = 1.00, b = 1.00 },
   targetArrowSize = 14,
   targetArrowThick = false,
   targetArrowStyle = "chevron",
@@ -79,6 +84,20 @@ function BNP:InitConfig()
   if BNP_DB.ccPosition == nil then BNP_DB.ccPosition = BNP_DB.debuffPosition or self.defaults.ccPosition end
   if BNP_DB.tankMode == nil then BNP_DB.tankMode = self.defaults.tankMode end
   if BNP_DB.invertTankColors == nil then BNP_DB.invertTankColors = self.defaults.invertTankColors end
+
+  local function InitTankColor(key, fallback)
+    local color = BNP_DB[key]
+    if type(color) ~= "table" then
+      color = {}
+      BNP_DB[key] = color
+    end
+    if color.r == nil then color.r = fallback.r end
+    if color.g == nil then color.g = fallback.g end
+    if color.b == nil then color.b = fallback.b end
+  end
+  InitTankColor("invertTankAggroColor", self.defaults.invertTankAggroColor)
+  InitTankColor("invertTankNoAggroColor", self.defaults.invertTankNoAggroColor)
+
   if BNP_DB.classColors == nil then BNP_DB.classColors = self.defaults.classColors end
   if BNP_DB.darkNameplateBorder == nil then BNP_DB.darkNameplateBorder = self.defaults.darkNameplateBorder end
   if BNP_DB.hideNameplateBorder == nil then BNP_DB.hideNameplateBorder = self.defaults.hideNameplateBorder end
@@ -124,6 +143,39 @@ function BNP:InitConfig()
   if BNP_DB.targetGlowOpacity == nil then BNP_DB.targetGlowOpacity = self.defaults.targetGlowOpacity end
   if BNP_DB.targetArrows == nil then BNP_DB.targetArrows = self.defaults.targetArrows end
   if BNP_DB.targetArrowColor == nil then BNP_DB.targetArrowColor = self.defaults.targetArrowColor end
+
+  -- One shared RGB color now drives BOTH Target Glow and Target Arrows.
+  -- Migration prefers the user's current custom Arrow color (the newest color
+  -- system). If that does not exist, fall back to the former Glow dropdown.
+  if type(BNP_DB.targetColor) ~= "table" then
+    local migrated
+    if type(BNP_DB.targetArrowCustomColor) == "table" then
+      migrated = {
+        r = BNP_DB.targetArrowCustomColor.r,
+        g = BNP_DB.targetArrowCustomColor.g,
+        b = BNP_DB.targetArrowCustomColor.b,
+      }
+    end
+    if not migrated or migrated.r == nil or migrated.g == nil or migrated.b == nil then
+      local legacyColors = {
+        white  = { r = 1.00, g = 1.00, b = 1.00 },
+        gold   = { r = 1.00, g = 0.82, b = 0.10 },
+        blue   = { r = 0.25, g = 0.55, b = 1.00 },
+        green  = { r = 0.25, g = 1.00, b = 0.35 },
+        red    = { r = 1.00, g = 0.20, b = 0.20 },
+        purple = { r = 0.75, g = 0.35, b = 1.00 },
+        black  = { r = 0.00, g = 0.00, b = 0.00 },
+      }
+      migrated = legacyColors[BNP_DB.targetGlowColor or self.defaults.targetGlowColor or "white"] or legacyColors.white
+    end
+    BNP_DB.targetColor = { r = migrated.r, g = migrated.g, b = migrated.b }
+  else
+    local fallback = self.defaults.targetColor or { r = 1, g = 1, b = 1 }
+    if BNP_DB.targetColor.r == nil then BNP_DB.targetColor.r = fallback.r end
+    if BNP_DB.targetColor.g == nil then BNP_DB.targetColor.g = fallback.g end
+    if BNP_DB.targetColor.b == nil then BNP_DB.targetColor.b = fallback.b end
+  end
+
   if BNP_DB.targetArrowSize == nil then BNP_DB.targetArrowSize = self.defaults.targetArrowSize end
   if BNP_DB.targetArrowThick == nil then BNP_DB.targetArrowThick = self.defaults.targetArrowThick end
   if BNP_DB.targetArrowStyle == nil then BNP_DB.targetArrowStyle = self.defaults.targetArrowStyle end
@@ -250,6 +302,50 @@ function BNP:AreTankModeColorsInverted()
   return BNP_DB and BNP_DB.invertTankColors and true or false
 end
 
+local function ClampTankColor(value, fallback)
+  value = tonumber(value)
+  if value == nil then value = fallback or 0 end
+  if value < 0 then value = 0 end
+  if value > 1 then value = 1 end
+  return value
+end
+
+function BNP:GetInvertTankAggroColor()
+  local fallback = self.defaults.invertTankAggroColor or { r = 1, g = 0, b = 0 }
+  local color = BNP_DB and BNP_DB.invertTankAggroColor or fallback
+  return ClampTankColor(color and color.r, fallback.r),
+         ClampTankColor(color and color.g, fallback.g),
+         ClampTankColor(color and color.b, fallback.b)
+end
+
+function BNP:GetInvertTankNoAggroColor()
+  local fallback = self.defaults.invertTankNoAggroColor or { r = 0, g = 1, b = 0 }
+  local color = BNP_DB and BNP_DB.invertTankNoAggroColor or fallback
+  return ClampTankColor(color and color.r, fallback.r),
+         ClampTankColor(color and color.g, fallback.g),
+         ClampTankColor(color and color.b, fallback.b)
+end
+
+function BNP:SetInvertTankAggroColor(r, g, b)
+  if not BNP_DB then return end
+  BNP_DB.invertTankAggroColor = {
+    r = ClampTankColor(r, 1),
+    g = ClampTankColor(g, 0),
+    b = ClampTankColor(b, 0),
+  }
+  if self.UpdateTankMode then self:UpdateTankMode() end
+end
+
+function BNP:SetInvertTankNoAggroColor(r, g, b)
+  if not BNP_DB then return end
+  BNP_DB.invertTankNoAggroColor = {
+    r = ClampTankColor(r, 0),
+    g = ClampTankColor(g, 1),
+    b = ClampTankColor(b, 0),
+  }
+  if self.UpdateTankMode then self:UpdateTankMode() end
+end
+
 function BNP:AreClassColorsEnabled()
   return not BNP_DB or BNP_DB.classColors ~= false
 end
@@ -352,24 +448,32 @@ function BNP:IsTargetFocusEnabled()
   return not BNP_DB or BNP_DB.targetFocus ~= false
 end
 
--- Shared immutable target colors. Keeping this table outside the getters avoids
--- allocating two new color maps over and over from the per-frame target path.
-local TARGET_INDICATOR_COLORS = {
-  white  = { 1.00, 1.00, 1.00 },
-  gold   = { 1.00, 0.82, 0.10 },
-  blue   = { 0.25, 0.55, 1.00 },
-  green  = { 0.25, 1.00, 0.35 },
-  red    = { 1.00, 0.20, 0.20 },
-  purple = { 0.75, 0.35, 1.00 },
-  black  = { 0.00, 0.00, 0.00 },
-}
-
-function BNP:GetTargetGlowColor()
-  local key = (BNP_DB and BNP_DB.targetGlowColor) or self.defaults.targetGlowColor or "white"
-  local c = TARGET_INDICATOR_COLORS[key] or TARGET_INDICATOR_COLORS.white
-  return c[1], c[2], c[3], key
+-- Target Glow and Target Arrows intentionally share one freely selectable RGB
+-- color. Tank Mode colors are stored separately and never touch this value.
+function BNP:GetTargetColor()
+  local fallback = self.defaults.targetColor or { r = 1, g = 1, b = 1 }
+  local color = BNP_DB and BNP_DB.targetColor or fallback
+  return ClampTankColor(color and color.r, fallback.r),
+         ClampTankColor(color and color.g, fallback.g),
+         ClampTankColor(color and color.b, fallback.b),
+         "custom"
 end
 
+function BNP:SetTargetColor(r, g, b)
+  if not BNP_DB then return end
+  BNP_DB.targetColor = {
+    r = ClampTankColor(r, 1),
+    g = ClampTankColor(g, 1),
+    b = ClampTankColor(b, 1),
+  }
+  if self.RefreshTargetFocus then self:RefreshTargetFocus() end
+end
+
+-- Compatibility aliases used by the rendering code. Both return the exact
+-- same shared target color.
+function BNP:GetTargetGlowColor()
+  return self:GetTargetColor()
+end
 
 function BNP:GetTargetGlowSize()
   local value = (BNP_DB and tonumber(BNP_DB.targetGlowSize)) or self.defaults.targetGlowSize or 0
@@ -390,14 +494,11 @@ function BNP:AreTargetArrowsEnabled()
 end
 
 function BNP:GetTargetArrowColor()
-  local key = (BNP_DB and BNP_DB.targetArrowColor) or self.defaults.targetArrowColor or "match"
-  if key == "match" then
-    local r, g, b = self:GetTargetGlowColor()
-    return r, g, b, key
-  end
+  return self:GetTargetColor()
+end
 
-  local c = TARGET_INDICATOR_COLORS[key] or TARGET_INDICATOR_COLORS.white
-  return c[1], c[2], c[3], key
+function BNP:SetTargetArrowColor(r, g, b)
+  self:SetTargetColor(r, g, b)
 end
 
 function BNP:GetTargetArrowSize()

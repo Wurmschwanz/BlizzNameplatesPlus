@@ -43,6 +43,223 @@ local function CreateCheck(parent, label, y, onclick, x)
   return check
 end
 
+local function SetColorSwatchColor(button, r, g, b)
+  if not button then return end
+  if button.BNPColorTexture then
+    button.BNPColorTexture:SetVertexColor(r or 1, g or 1, b or 1, 1)
+  elseif button.SetBackdropColor then
+    button:SetBackdropColor(r or 1, g or 1, b or 1, 1)
+  end
+end
+
+local function PrepareBNPColorPicker()
+  if not ColorPickerFrame then return end
+
+  -- BNP's options window lives on DIALOG. Put the Blizzard color picker on a
+  -- higher strata, but do NOT force a high frame level on the parent itself.
+  -- Raising only the parent frame level can leave Blizzard's native Okay /
+  -- Cancel buttons underneath its mouse layer on old 1.12 clients.
+  if ColorPickerFrame.SetFrameStrata then
+    ColorPickerFrame:SetFrameStrata("FULLSCREEN_DIALOG")
+  end
+  if ColorPickerFrame.SetMovable then
+    ColorPickerFrame:SetMovable(true)
+  end
+  if ColorPickerFrame.SetClampedToScreen then
+    ColorPickerFrame:SetClampedToScreen(true)
+  end
+  if ColorPickerFrame.EnableMouse then
+    ColorPickerFrame:EnableMouse(true)
+  end
+  -- Never let the picker become a modal keyboard owner. On some 1.12
+  -- clients the Blizzard color picker can otherwise swallow movement keys
+  -- and action-bar binds while it is visible. Mouse interaction remains
+  -- enabled so the wheel, buttons and background dragging still work.
+  if ColorPickerFrame.EnableKeyboard then
+    ColorPickerFrame:EnableKeyboard(false)
+  end
+
+  -- Remove the old separate drag header if this code is loaded over a build
+  -- that already created it during the same UI session.
+  if BNPColorPickerDragHandle then
+    BNPColorPickerDragHandle:Hide()
+    BNPColorPickerDragHandle:EnableMouse(false)
+  end
+
+  -- Do NOT make the ColorPickerFrame itself draggable with the left mouse
+  -- button. On the old client the color wheel/value slider are handled by the
+  -- ColorSelect frame itself, so a parent OnMouseDown steals the drag from the
+  -- color selector. Instead create transparent drag zones only over genuinely
+  -- unused background areas. This keeps the picker easy to move while the
+  -- color point and brightness slider remain fully interactive.
+  if not ColorPickerFrame.BNPDragInstalled then
+    ColorPickerFrame.BNPDragInstalled = true
+
+    local function CreatePickerDragZone(name)
+      local zone = CreateFrame("Frame", name, ColorPickerFrame)
+      zone:EnableMouse(true)
+      if zone.SetFrameLevel and ColorPickerFrame.GetFrameLevel then
+        zone:SetFrameLevel(ColorPickerFrame:GetFrameLevel() + 5)
+      end
+      zone:SetScript("OnMouseDown", function()
+        if arg1 == "LeftButton" and ColorPickerFrame.StartMoving then
+          ColorPickerFrame:StartMoving()
+        end
+      end)
+      zone:SetScript("OnMouseUp", function()
+        if ColorPickerFrame.StopMovingOrSizing then
+          ColorPickerFrame:StopMovingOrSizing()
+        end
+      end)
+      return zone
+    end
+
+    -- Top/title area: full width, safely above the actual color controls.
+    local top = CreatePickerDragZone("BNPColorPickerDragTop")
+    top:SetPoint("TOPLEFT", ColorPickerFrame, "TOPLEFT", 6, -4)
+    top:SetPoint("TOPRIGHT", ColorPickerFrame, "TOPRIGHT", -6, -4)
+    top:SetHeight(28)
+
+    -- Right-side empty panel around the preview swatch. This gives a second,
+    -- large place to grab the window without covering the wheel or slider.
+    local side = CreatePickerDragZone("BNPColorPickerDragSide")
+    side:SetPoint("TOPRIGHT", ColorPickerFrame, "TOPRIGHT", -6, -34)
+    side:SetWidth(58)
+    side:SetHeight(92)
+
+    ColorPickerFrame.BNPDragTop = top
+    ColorPickerFrame.BNPDragSide = side
+  end
+
+  -- Keep the three action buttons compact and separated so they stay fully
+  -- clickable on the old client. The default Blizzard button widths are a bit
+  -- too large once BNP adds Reset, which caused overlap in practice.
+  if ColorPickerOkayButton then
+    ColorPickerOkayButton:ClearAllPoints()
+    ColorPickerOkayButton:SetWidth(62)
+    ColorPickerOkayButton:SetHeight(18)
+    ColorPickerOkayButton:SetPoint("BOTTOMLEFT", ColorPickerFrame, "BOTTOMLEFT", 10, 12)
+  end
+  if ColorPickerCancelButton then
+    ColorPickerCancelButton:ClearAllPoints()
+    ColorPickerCancelButton:SetWidth(62)
+    ColorPickerCancelButton:SetHeight(18)
+    ColorPickerCancelButton:SetPoint("BOTTOMRIGHT", ColorPickerFrame, "BOTTOMRIGHT", -10, 12)
+  end
+
+  -- Reset lives directly on the picker and gets its own centered slot between
+  -- Okay and Cancel, so no button overlaps another one.
+  if not BNPColorPickerResetButton then
+    local reset = CreateFrame("Button", "BNPColorPickerResetButton", ColorPickerFrame, "UIPanelButtonTemplate")
+    reset:SetText("Reset")
+    reset:SetScript("OnClick", function()
+      local r = ColorPickerFrame.BNPResetR
+      local g = ColorPickerFrame.BNPResetG
+      local b = ColorPickerFrame.BNPResetB
+      local setter = ColorPickerFrame.BNPActiveColorSetter
+      local swatch = ColorPickerFrame.BNPActiveColorSwatch
+      if r == nil or g == nil or b == nil or not setter then return end
+
+      ColorPickerFrame:SetColorRGB(r, g, b)
+      setter(r, g, b)
+      if swatch and swatch.RefreshColor then swatch:RefreshColor() end
+    end)
+    reset:SetScript("OnEnter", function()
+      GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+      GameTooltip:SetText("Reset Color", 1, 0.82, 0)
+      GameTooltip:AddLine("Restores BNP's default color for this Invert Tank state.", 1, 1, 1, true)
+      GameTooltip:Show()
+    end)
+    reset:SetScript("OnLeave", function() GameTooltip:Hide() end)
+  end
+
+  BNPColorPickerResetButton:ClearAllPoints()
+  BNPColorPickerResetButton:SetWidth(46)
+  BNPColorPickerResetButton:SetHeight(18)
+  BNPColorPickerResetButton:SetPoint("BOTTOM", ColorPickerFrame, "BOTTOM", 0, 12)
+end
+
+local function CreateColorSwatch(parent, label, y, x, getColor, setColor, defaultR, defaultG, defaultB)
+  local text = parent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  text:SetPoint("TOPLEFT", parent, "TOPLEFT", x or 22, y - 2)
+  text:SetText(label)
+
+  -- Use explicit textures instead of a backdrop here. This is more reliable on
+  -- old 1.12 clients and guarantees that the user actually sees a color box.
+  local swatch = CreateFrame("Button", nil, parent)
+  swatch:SetWidth(24)
+  swatch:SetHeight(24)
+  swatch:SetPoint("LEFT", text, "RIGHT", 8, 0)
+
+  local border = swatch:CreateTexture(nil, "BACKGROUND")
+  border:SetAllPoints(swatch)
+  border:SetTexture(0.10, 0.10, 0.10, 1)
+
+  local color = swatch:CreateTexture(nil, "ARTWORK")
+  color:SetPoint("TOPLEFT", swatch, "TOPLEFT", 3, -3)
+  color:SetPoint("BOTTOMRIGHT", swatch, "BOTTOMRIGHT", -3, 3)
+  color:SetTexture("Interface\\ChatFrame\\ChatFrameBackground")
+  swatch.BNPColorTexture = color
+
+  local shine = swatch:CreateTexture(nil, "OVERLAY")
+  shine:SetPoint("TOPLEFT", swatch, "TOPLEFT", 2, -2)
+  shine:SetWidth(18)
+  shine:SetHeight(1)
+  shine:SetTexture(0.85, 0.85, 0.85, 0.9)
+
+  function swatch:RefreshColor()
+    local r, g, b = getColor()
+    SetColorSwatchColor(self, r, g, b)
+  end
+
+  swatch:SetScript("OnClick", function()
+    local r, g, b = getColor()
+    local oldR, oldG, oldB = r, g, b
+
+    PrepareBNPColorPicker()
+    ColorPickerFrame:Hide()
+    ColorPickerFrame.BNPResetR = defaultR
+    ColorPickerFrame.BNPResetG = defaultG
+    ColorPickerFrame.BNPResetB = defaultB
+    ColorPickerFrame.BNPActiveColorSetter = setColor
+    ColorPickerFrame.BNPActiveColorSwatch = swatch
+    ColorPickerFrame.func = nil
+    ColorPickerFrame.opacityFunc = nil
+    ColorPickerFrame.cancelFunc = nil
+    ColorPickerFrame.hasOpacity = false
+    ColorPickerFrame:SetColorRGB(r, g, b)
+
+    ColorPickerFrame.func = function()
+      local nr, ng, nb = ColorPickerFrame:GetColorRGB()
+      setColor(nr, ng, nb)
+      swatch:RefreshColor()
+    end
+
+    ColorPickerFrame.cancelFunc = function()
+      setColor(oldR, oldG, oldB)
+      swatch:RefreshColor()
+    end
+
+    ColorPickerFrame:Show()
+    -- Blizzard's OnShow may restore keyboard input on old clients, so force
+    -- it off after the frame is actually visible as well.
+    if ColorPickerFrame.EnableKeyboard then ColorPickerFrame:EnableKeyboard(false) end
+    if ColorPickerFrame.Raise then ColorPickerFrame:Raise() end
+  end)
+
+  swatch:SetScript("OnEnter", function()
+    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+    GameTooltip:SetText(label, 1, 0.82, 0)
+    GameTooltip:AddLine("Click the color box to choose the color used while Invert Tank Colors is enabled.", 1, 1, 1, true)
+    GameTooltip:AddLine("The color picker opens above this menu and can be dragged from any free background area.", 0.8, 0.8, 0.8, true)
+    GameTooltip:Show()
+  end)
+  swatch:SetScript("OnLeave", function() GameTooltip:Hide() end)
+  swatch.BNPLabel = text
+  swatch:RefreshColor()
+  return swatch, text
+end
+
 -- 1.12-safe emergency recorder ------------------------------------------------
 --
 -- Keep a compact recorder directly in this already proven options file.  The
@@ -392,8 +609,9 @@ function BNP:CreateOptions()
 
   local frame = CreateFrame("Frame", "BNPOptionsFrame", UIParent)
   frame:SetWidth(430)
-  frame:SetHeight(550)
-  frame:SetPoint("CENTER", UIParent, "CENTER", 0, 40)
+  frame:SetHeight(590)
+  -- Keep the top edge in the same place and add the extra room downward.
+  frame:SetPoint("CENTER", UIParent, "CENTER", 0, 20)
   frame:SetFrameStrata("DIALOG")
   frame:SetBackdrop({
     bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
@@ -423,7 +641,7 @@ function BNP:CreateOptions()
   local function CreatePage()
     local page = CreateFrame("Frame", nil, frame)
     page:SetPoint("TOPLEFT", frame, "TOPLEFT", 18, -104)
-    page:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -18, 22)
+    page:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -18, 14)
     page:Hide()
     return page
   end
@@ -518,9 +736,11 @@ function BNP:CreateOptions()
 
   -- NAMEPLATES TAB ---------------------------------------------------------
   local nameplatesPage = frame.pages.nameplates
+
+  -- GENERAL ---------------------------------------------------------------
   CreateSection(nameplatesPage, "General", -4)
 
-  local scale = CreateSlider(nameplatesPage, "Nameplate Scale", 0.70, 1.50, 0.05, -36, 28, 150)
+  local scale = CreateSlider(nameplatesPage, "Nameplate Scale", 0.70, 1.50, 0.05, -28, 28, 150)
   scale:SetScript("OnValueChanged", function()
     if not BNP_DB then return end
     local value = Round(this:GetValue(), 0.05)
@@ -530,7 +750,7 @@ function BNP:CreateOptions()
   end)
   frame.scaleSlider = scale
 
-  local yOffset = CreateSlider(nameplatesPage, "Nameplate Y Offset", 0, 50, 1, -36, 220, 150)
+  local yOffset = CreateSlider(nameplatesPage, "Nameplate Y Offset", 0, 50, 1, -28, 220, 150)
   yOffset:SetScript("OnValueChanged", function()
     if not BNP_DB then return end
     local value = math.floor(this:GetValue() + 0.5)
@@ -540,7 +760,7 @@ function BNP:CreateOptions()
   end)
   frame.yOffsetSlider = yOffset
 
-  local nonTargetAlpha = CreateSlider(nameplatesPage, "Non-Target Alpha", 30, 100, 5, -82, 28, 150)
+  local nonTargetAlpha = CreateSlider(nameplatesPage, "Non-Target Alpha", 30, 100, 5, -64, 28, 150)
   nonTargetAlpha:SetScript("OnValueChanged", function()
     if not BNP_DB then return end
     local percent = math.floor((this:GetValue() / 5) + 0.5) * 5
@@ -552,55 +772,13 @@ function BNP:CreateOptions()
   end)
   frame.nonTargetAlphaSlider = nonTargetAlpha
 
-  local classColors = CreateCheck(nameplatesPage, "Class Colors", -82, function()
+  local classColors = CreateCheck(nameplatesPage, "Class Colors", -60, function()
     BNP_DB.classColors = this:GetChecked() and true or false
     if BNP.RefreshClassColors then BNP:RefreshClassColors() end
   end, 214)
   frame.classColorsCheck = classColors
 
-  CreateSection(nameplatesPage, "Names", -158)
-
-  local hidePlayerNames = CreateCheck(nameplatesPage, "Hide Player Names", -182, function()
-    BNP_DB.hidePlayerNames = this:GetChecked() and true or false
-    if BNP.RefreshNameVisibility then BNP:RefreshNameVisibility() end
-  end, 22)
-  frame.hidePlayerNamesCheck = hidePlayerNames
-
-  local tank = CreateCheck(nameplatesPage, "Tank Mode", -106, function()
-    BNP_DB.tankMode = this:GetChecked() and true or false
-    if BNP.UpdateTankMode then BNP:UpdateTankMode() end
-  end)
-  tank:SetScript("OnEnter", function()
-    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
-    GameTooltip:SetText("Tank Mode", 1, 0.82, 0)
-    if BNP:AreTankModeColorsInverted() then
-      GameTooltip:AddLine("Red: the unit is targeting you.", 1, 1, 1)
-      GameTooltip:AddLine("Green: the unit is targeting someone else.", 1, 1, 1)
-    else
-      GameTooltip:AddLine("Green: the unit is targeting you.", 1, 1, 1)
-      GameTooltip:AddLine("Red: the unit is targeting someone else.", 1, 1, 1)
-    end
-    GameTooltip:Show()
-  end)
-  tank:SetScript("OnLeave", function() GameTooltip:Hide() end)
-  frame.tankCheck = tank
-
-  local invertTankColors = CreateCheck(nameplatesPage, "Invert Tank Colors", -106, function()
-    BNP_DB.invertTankColors = this:GetChecked() and true or false
-    if BNP.UpdateTankMode then BNP:UpdateTankMode() end
-  end, 214)
-  invertTankColors:SetScript("OnEnter", function()
-    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
-    GameTooltip:SetText("Invert Tank Colors", 1, 0.82, 0)
-    GameTooltip:AddLine("Reverses the Tank Mode colors.", 1, 1, 1)
-    GameTooltip:AddLine("Red: the unit is targeting you.", 1, 1, 1)
-    GameTooltip:AddLine("Green: the unit is targeting someone else.", 1, 1, 1)
-    GameTooltip:Show()
-  end)
-  invertTankColors:SetScript("OnLeave", function() GameTooltip:Hide() end)
-  frame.invertTankColorsCheck = invertTankColors
-
-  local darkNameplateBorder = CreateCheck(nameplatesPage, "Dark Border", -130, function()
+  local darkNameplateBorder = CreateCheck(nameplatesPage, "Dark Border", -88, function()
     BNP_DB.darkNameplateBorder = this:GetChecked() and true or false
     if BNP.RefreshNameplateBorderStyle then BNP:RefreshNameplateBorderStyle() end
   end, 22)
@@ -614,24 +792,7 @@ function BNP:CreateOptions()
   darkNameplateBorder:SetScript("OnLeave", function() GameTooltip:Hide() end)
   frame.darkNameplateBorderCheck = darkNameplateBorder
 
-  if comboOptionsClass then
-    local darkComboPointBorder = CreateCheck(nameplatesPage, "Dark CP Border", -130, function()
-      BNP_DB.darkComboPointBorder = this:GetChecked() and true or false
-      if BNP.RefreshComboPointBorderStyle then BNP:RefreshComboPointBorderStyle() end
-      if BNP.RefreshComboPoints then BNP:RefreshComboPoints() end
-    end, 150)
-    darkComboPointBorder:SetScript("OnEnter", function()
-      GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
-      GameTooltip:SetText("Dark Combo Point Border", 1, 0.82, 0)
-      GameTooltip:AddLine("Replaces the gold Combo Point rim with a dark border.", 1, 1, 1, true)
-      GameTooltip:AddLine("This setting is independent from Dark Nameplate Border and ShaguTweaks.", 0.8, 0.8, 0.8, true)
-      GameTooltip:Show()
-    end)
-    darkComboPointBorder:SetScript("OnLeave", function() GameTooltip:Hide() end)
-    frame.darkComboPointBorderCheck = darkComboPointBorder
-  end
-
-  local hideNameplateBorder = CreateCheck(nameplatesPage, "Hide Border", -130, function()
+  local hideNameplateBorder = CreateCheck(nameplatesPage, "Hide Border", -88, function()
     BNP_DB.hideNameplateBorder = this:GetChecked() and true or false
     if BNP.RefreshNameplateBorderStyle then BNP:RefreshNameplateBorderStyle() end
     if frame.UpdateDependentControls then frame:UpdateDependentControls() end
@@ -645,13 +806,65 @@ function BNP:CreateOptions()
   hideNameplateBorder:SetScript("OnLeave", function() GameTooltip:Hide() end)
   frame.hideNameplateBorderCheck = hideNameplateBorder
 
-  local hideNPCNames = CreateCheck(nameplatesPage, "Hide NPC Names", -182, function()
+  -- TANK MODE -------------------------------------------------------------
+  CreateSection(nameplatesPage, "Tank Mode", -118)
+
+  local tank = CreateCheck(nameplatesPage, "Tank Mode", -142, function()
+    BNP_DB.tankMode = this:GetChecked() and true or false
+    if BNP.UpdateTankMode then BNP:UpdateTankMode() end
+    if frame.UpdateDependentControls then frame:UpdateDependentControls() end
+  end, 22)
+  tank:SetScript("OnEnter", function()
+    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+    GameTooltip:SetText("Tank Mode", 1, 0.82, 0)
+    GameTooltip:AddLine("Normal mode is fixed: Green when the unit targets you, Red when it targets someone else.", 1, 1, 1, true)
+    GameTooltip:Show()
+  end)
+  tank:SetScript("OnLeave", function() GameTooltip:Hide() end)
+  frame.tankCheck = tank
+
+  local invertTankColors = CreateCheck(nameplatesPage, "Invert Tank Colors", -142, function()
+    BNP_DB.invertTankColors = this:GetChecked() and true or false
+    if BNP.UpdateTankMode then BNP:UpdateTankMode() end
+    if frame.UpdateDependentControls then frame:UpdateDependentControls() end
+  end, 214)
+  invertTankColors:SetScript("OnEnter", function()
+    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+    GameTooltip:SetText("Invert Tank Colors", 1, 0.82, 0)
+    GameTooltip:AddLine("Uses the two custom colors below instead of the normal fixed Green/Red Tank Mode colors.", 1, 1, 1, true)
+    GameTooltip:Show()
+  end)
+  invertTankColors:SetScript("OnLeave", function() GameTooltip:Hide() end)
+  frame.invertTankColorsCheck = invertTankColors
+
+  local invertAggroColor = CreateColorSwatch(nameplatesPage, "Aggro Color", -170, 22,
+    function() return BNP:GetInvertTankAggroColor() end,
+    function(r, g, b) BNP:SetInvertTankAggroColor(r, g, b) end,
+    1.00, 0.00, 0.00)
+  frame.invertAggroColorSwatch = invertAggroColor
+
+  local invertNoAggroColor = CreateColorSwatch(nameplatesPage, "No Aggro Color", -170, 214,
+    function() return BNP:GetInvertTankNoAggroColor() end,
+    function(r, g, b) BNP:SetInvertTankNoAggroColor(r, g, b) end,
+    0.00, 1.00, 0.00)
+  frame.invertNoAggroColorSwatch = invertNoAggroColor
+
+  -- NAMES & LEVEL ---------------------------------------------------------
+  CreateSection(nameplatesPage, "Names & Level", -202)
+
+  local hidePlayerNames = CreateCheck(nameplatesPage, "Hide Player Names", -226, function()
+    BNP_DB.hidePlayerNames = this:GetChecked() and true or false
+    if BNP.RefreshNameVisibility then BNP:RefreshNameVisibility() end
+  end, 22)
+  frame.hidePlayerNamesCheck = hidePlayerNames
+
+  local hideNPCNames = CreateCheck(nameplatesPage, "Hide NPC Names", -226, function()
     BNP_DB.hideNPCNames = this:GetChecked() and true or false
     if BNP.RefreshNameVisibility then BNP:RefreshNameVisibility() end
   end, 214)
   frame.hideNPCNamesCheck = hideNPCNames
 
-  local hideNameplateLevel = CreateCheck(nameplatesPage, "Hide Level", -206, function()
+  local hideNameplateLevel = CreateCheck(nameplatesPage, "Hide Level", -250, function()
     BNP_DB.hideNameplateLevel = this:GetChecked() and true or false
     if BNP.RefreshNameplateLevelVisibility then BNP:RefreshNameplateLevelVisibility() end
     if BNP.RefreshCastbarLayout then BNP:RefreshCastbarLayout() end
@@ -665,14 +878,37 @@ function BNP:CreateOptions()
   hideNameplateLevel:SetScript("OnLeave", function() GameTooltip:Hide() end)
   frame.hideNameplateLevelCheck = hideNameplateLevel
 
-  CreateSection(nameplatesPage, "Health Bar & Text", -294)
+  -- Name text controls are independent from Nameplate Scale. The size setting
+  -- only touches the Blizzard name FontString; the Y offset only moves it.
+  local nameFontSize = CreateSlider(nameplatesPage, "Name Font Size", 8, 24, 1, -280, 28, 150)
+  nameFontSize:SetScript("OnValueChanged", function()
+    if not BNP_DB or frame.BNPSyncingNameControls then return end
+    local value = math.floor(this:GetValue() + 0.5)
+    BNP_DB.nameFontSize = value
+    getglobal(this:GetName() .. "Text"):SetText("Name Font Size: " .. value)
+    if BNP.RefreshNameAppearance then BNP:RefreshNameAppearance() end
+  end)
+  frame.nameFontSizeSlider = nameFontSize
+
+  local nameFontYOffset = CreateSlider(nameplatesPage, "Name Y Offset", -50, 50, 1, -280, 220, 150)
+  nameFontYOffset:SetScript("OnValueChanged", function()
+    if not BNP_DB or frame.BNPSyncingNameControls then return end
+    local value = RoundSignedInteger(this:GetValue())
+    BNP_DB.nameFontYOffset = value
+    getglobal(this:GetName() .. "Text"):SetText("Name Y Offset: " .. (value > 0 and "+" or "") .. value)
+    if BNP.ApplyNameFontYOffsetAll then BNP:ApplyNameFontYOffsetAll() end
+  end)
+  frame.nameFontYOffsetSlider = nameFontYOffset
+
+  -- HEALTH BAR & TEXT -----------------------------------------------------
+  CreateSection(nameplatesPage, "Health Bar & Text", -310)
 
   local healthTextLabel = nameplatesPage:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-  healthTextLabel:SetPoint("TOPLEFT", nameplatesPage, "TOPLEFT", 28, -322)
+  healthTextLabel:SetPoint("TOPLEFT", nameplatesPage, "TOPLEFT", 28, -332)
   healthTextLabel:SetText("Display")
 
   local healthTextDropdown = CreateFrame("Frame", "BNPHealthTextDropdown", nameplatesPage, "UIDropDownMenuTemplate")
-  healthTextDropdown:SetPoint("TOPLEFT", nameplatesPage, "TOPLEFT", 10, -334)
+  healthTextDropdown:SetPoint("TOPLEFT", nameplatesPage, "TOPLEFT", 10, -344)
   UIDropDownMenu_SetWidth(150, healthTextDropdown)
 
   local healthModeLabels = {
@@ -707,35 +943,12 @@ function BNP:CreateOptions()
   frame.healthTextDropdown = healthTextDropdown
   frame.SetHealthTextMode = SetHealthTextMode
 
-  local healthFontSize = CreateSlider(nameplatesPage, "Health Font Size", 8, 20, 1, -388, 28, 150)
-  healthFontSize:SetScript("OnValueChanged", function()
-    if not BNP_DB or frame.BNPSyncingHealthTextControls then return end
-    local value = math.floor(this:GetValue() + 0.5)
-    BNP_DB.healthTextFontSize = value
-    getglobal(this:GetName() .. "Text"):SetText("Health Font Size: " .. value)
-    if BNP.RefreshHealthPercent then BNP:RefreshHealthPercent() end
-  end)
-  frame.healthTextFontSizeSlider = healthFontSize
-
-  local blackHealthbarBackground = CreateCheck(nameplatesPage, "Black Health Background", -384, function()
-    BNP_DB.blackHealthbarBackground = this:GetChecked() and true or false
-    if BNP.RefreshHealthbarBackground then BNP:RefreshHealthbarBackground() end
-  end, 214)
-  blackHealthbarBackground:SetScript("OnEnter", function()
-    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
-    GameTooltip:SetText("Black Healthbar Background", 1, 0.82, 0)
-    GameTooltip:AddLine("Shows missing health on the nameplate against a solid black background instead of the transparent world view.", 1, 1, 1, true)
-    GameTooltip:Show()
-  end)
-  blackHealthbarBackground:SetScript("OnLeave", function() GameTooltip:Hide() end)
-  frame.blackHealthbarBackgroundCheck = blackHealthbarBackground
-
   local healthOutlineLabel = nameplatesPage:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-  healthOutlineLabel:SetPoint("TOPLEFT", nameplatesPage, "TOPLEFT", 220, -322)
+  healthOutlineLabel:SetPoint("TOPLEFT", nameplatesPage, "TOPLEFT", 220, -332)
   healthOutlineLabel:SetText("Outline")
 
   local healthOutlineDropdown = CreateFrame("Frame", "BNPHealthOutlineDropdown", nameplatesPage, "UIDropDownMenuTemplate")
-  healthOutlineDropdown:SetPoint("TOPLEFT", nameplatesPage, "TOPLEFT", 200, -334)
+  healthOutlineDropdown:SetPoint("TOPLEFT", nameplatesPage, "TOPLEFT", 200, -344)
   UIDropDownMenu_SetWidth(150, healthOutlineDropdown)
 
   local healthOutlineLabels = {
@@ -768,10 +981,34 @@ function BNP:CreateOptions()
   frame.healthTextOutlineDropdown = healthOutlineDropdown
   frame.SetHealthTextOutline = SetHealthTextOutline
 
-  if comboOptionsClass then
-    CreateSection(nameplatesPage, "Combo Points", -424)
+  local healthFontSize = CreateSlider(nameplatesPage, "Health Font Size", 8, 20, 1, -390, 28, 150)
+  healthFontSize:SetScript("OnValueChanged", function()
+    if not BNP_DB or frame.BNPSyncingHealthTextControls then return end
+    local value = math.floor(this:GetValue() + 0.5)
+    BNP_DB.healthTextFontSize = value
+    getglobal(this:GetName() .. "Text"):SetText("Health Font Size: " .. value)
+    if BNP.RefreshHealthPercent then BNP:RefreshHealthPercent() end
+  end)
+  frame.healthTextFontSizeSlider = healthFontSize
 
-    local comboPoints = CreateCheck(nameplatesPage, "Combo Points", -450, function()
+  local blackHealthbarBackground = CreateCheck(nameplatesPage, "Black Health Background", -386, function()
+    BNP_DB.blackHealthbarBackground = this:GetChecked() and true or false
+    if BNP.RefreshHealthbarBackground then BNP:RefreshHealthbarBackground() end
+  end, 214)
+  blackHealthbarBackground:SetScript("OnEnter", function()
+    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+    GameTooltip:SetText("Black Healthbar Background", 1, 0.82, 0)
+    GameTooltip:AddLine("Shows missing health on the nameplate against a solid black background instead of the transparent world view.", 1, 1, 1, true)
+    GameTooltip:Show()
+  end)
+  blackHealthbarBackground:SetScript("OnLeave", function() GameTooltip:Hide() end)
+  frame.blackHealthbarBackgroundCheck = blackHealthbarBackground
+
+  -- COMBO POINTS (Rogue / Druid only) ------------------------------------
+  if comboOptionsClass then
+    CreateSection(nameplatesPage, "Combo Points", -416)
+
+    local comboPoints = CreateCheck(nameplatesPage, "Combo Points", -440, function()
       BNP_DB.comboPoints = this:GetChecked() and true or false
       if BNP.RefreshComboPoints then BNP:RefreshComboPoints() end
       if BNP.RefreshAllAuraLayouts then BNP:RefreshAllAuraLayouts() end
@@ -780,7 +1017,22 @@ function BNP:CreateOptions()
     end, 22)
     frame.comboPointsCheck = comboPoints
 
-    local comboYOffset = CreateSlider(nameplatesPage, "Combo Point Y Offset", -50, 50, 1, -452, 220, 150)
+    local darkComboPointBorder = CreateCheck(nameplatesPage, "Dark CP Border", -440, function()
+      BNP_DB.darkComboPointBorder = this:GetChecked() and true or false
+      if BNP.RefreshComboPointBorderStyle then BNP:RefreshComboPointBorderStyle() end
+      if BNP.RefreshComboPoints then BNP:RefreshComboPoints() end
+    end, 150)
+    darkComboPointBorder:SetScript("OnEnter", function()
+      GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+      GameTooltip:SetText("Dark Combo Point Border", 1, 0.82, 0)
+      GameTooltip:AddLine("Replaces the gold Combo Point rim with a dark border.", 1, 1, 1, true)
+      GameTooltip:AddLine("This setting is independent from Dark Nameplate Border and ShaguTweaks.", 0.8, 0.8, 0.8, true)
+      GameTooltip:Show()
+    end)
+    darkComboPointBorder:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    frame.darkComboPointBorderCheck = darkComboPointBorder
+
+    local comboYOffset = CreateSlider(nameplatesPage, "Combo Point Y Offset", -50, 50, 1, -440, 278, 105)
     comboYOffset:SetScript("OnValueChanged", function()
       if not BNP_DB then return end
       local value = RoundSignedInteger(this:GetValue())
@@ -789,30 +1041,7 @@ function BNP:CreateOptions()
       if BNP.RefreshComboPoints then BNP:RefreshComboPoints() end
     end)
     frame.comboPointsYOffsetSlider = comboYOffset
-
   end
-
-  -- Name text controls are independent from Nameplate Scale. The size setting
-  -- only touches the Blizzard name FontString; the Y offset only moves it.
-  local nameFontSize = CreateSlider(nameplatesPage, "Name Font Size", 8, 24, 1, -250, 28, 150)
-  nameFontSize:SetScript("OnValueChanged", function()
-    if not BNP_DB or frame.BNPSyncingNameControls then return end
-    local value = math.floor(this:GetValue() + 0.5)
-    BNP_DB.nameFontSize = value
-    getglobal(this:GetName() .. "Text"):SetText("Name Font Size: " .. value)
-    if BNP.RefreshNameAppearance then BNP:RefreshNameAppearance() end
-  end)
-  frame.nameFontSizeSlider = nameFontSize
-
-  local nameFontYOffset = CreateSlider(nameplatesPage, "Name Y Offset", -50, 50, 1, -250, 220, 150)
-  nameFontYOffset:SetScript("OnValueChanged", function()
-    if not BNP_DB or frame.BNPSyncingNameControls then return end
-    local value = RoundSignedInteger(this:GetValue())
-    BNP_DB.nameFontYOffset = value
-    getglobal(this:GetName() .. "Text"):SetText("Name Y Offset: " .. (value > 0 and "+" or "") .. value)
-    if BNP.ApplyNameFontYOffsetAll then BNP:ApplyNameFontYOffsetAll() end
-  end)
-  frame.nameFontYOffsetSlider = nameFontYOffset
 
   -- AURAS TAB --------------------------------------------------------------
   local aurasPage = frame.pages.auras
@@ -1253,48 +1482,13 @@ function BNP:CreateOptions()
   end)
   frame.targetFocusCheck = targetFocus
 
-  local glowColorLabel = targetPage:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-  glowColorLabel:SetPoint("TOPLEFT", targetPage, "TOPLEFT", 28, -88)
-  glowColorLabel:SetText("Target Color")
-  frame.glowColorLabel = glowColorLabel
-
-  local glowColorDropdown = CreateFrame("Frame", "BNPTargetGlowColorDropdown", targetPage, "UIDropDownMenuTemplate")
-  glowColorDropdown:SetPoint("TOPLEFT", targetPage, "TOPLEFT", 10, -100)
-  UIDropDownMenu_SetWidth(150, glowColorDropdown)
-
-  local glowColorLabels = {
-    white = "White",
-    gold = "Gold",
-    blue = "Blue",
-    green = "Green",
-    red = "Red",
-    purple = "Purple",
-    black = "Black",
-  }
-
-  local function SetTargetGlowColor(color)
-    if not glowColorLabels[color] then color = "white" end
-    BNP_DB.targetGlowColor = color
-    UIDropDownMenu_SetSelectedValue(glowColorDropdown, color)
-    UIDropDownMenu_SetText(glowColorLabels[color], glowColorDropdown)
-    if BNP.RefreshTargetFocus then BNP:RefreshTargetFocus() end
-  end
-
-  UIDropDownMenu_Initialize(glowColorDropdown, function()
-    local colors = { "white", "gold", "blue", "green", "red", "purple", "black" }
-    local n
-    for n = 1, table.getn(colors) do
-      local color = colors[n]
-      local info = {}
-      info.text = glowColorLabels[color]
-      info.value = color
-      info.func = function() SetTargetGlowColor(this.value) end
-      info.checked = ((BNP_DB and BNP_DB.targetGlowColor) or "white") == color
-      UIDropDownMenu_AddButton(info)
-    end
-  end)
-  frame.glowColorDropdown = glowColorDropdown
-  frame.SetTargetGlowColor = SetTargetGlowColor
+  -- One shared free RGB color for both target indicators.
+  local targetColorSwatch, targetColorLabel = CreateColorSwatch(targetPage, "Target Color", -88, 28,
+    function() return BNP:GetTargetColor() end,
+    function(r, g, b) BNP:SetTargetColor(r, g, b) end,
+    1.00, 1.00, 1.00)
+  frame.targetColorSwatch = targetColorSwatch
+  frame.targetColorLabel = targetColorLabel
 
   local glowSize = CreateSlider(targetPage, "Target Glow Size", 0, 20, 1, -168)
   glowSize:SetWidth(145)
@@ -1326,50 +1520,6 @@ function BNP:CreateOptions()
   targetArrows:ClearAllPoints()
   targetArrows:SetPoint("TOPLEFT", targetPage, "TOPLEFT", 204, -42)
   frame.targetArrowsCheck = targetArrows
-
-  local arrowColorLabel = targetPage:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-  arrowColorLabel:SetPoint("TOPLEFT", targetPage, "TOPLEFT", 210, -88)
-  arrowColorLabel:SetText("Arrow Color")
-  frame.arrowColorLabel = arrowColorLabel
-
-  local arrowColorDropdown = CreateFrame("Frame", "BNPTargetArrowColorDropdown", targetPage, "UIDropDownMenuTemplate")
-  arrowColorDropdown:SetPoint("TOPLEFT", targetPage, "TOPLEFT", 192, -100)
-  UIDropDownMenu_SetWidth(140, arrowColorDropdown)
-
-  local arrowColorLabels = {
-    match = "Match Target Color",
-    white = "White",
-    gold = "Gold",
-    blue = "Blue",
-    green = "Green",
-    red = "Red",
-    purple = "Purple",
-    black = "Black",
-  }
-
-  local function SetTargetArrowColor(color)
-    if not arrowColorLabels[color] then color = "match" end
-    BNP_DB.targetArrowColor = color
-    UIDropDownMenu_SetSelectedValue(arrowColorDropdown, color)
-    UIDropDownMenu_SetText(arrowColorLabels[color], arrowColorDropdown)
-    if BNP.RefreshTargetFocus then BNP:RefreshTargetFocus() end
-  end
-
-  UIDropDownMenu_Initialize(arrowColorDropdown, function()
-    local colors = { "match", "white", "gold", "blue", "green", "red", "purple", "black" }
-    local n
-    for n = 1, table.getn(colors) do
-      local color = colors[n]
-      local info = {}
-      info.text = arrowColorLabels[color]
-      info.value = color
-      info.func = function() SetTargetArrowColor(this.value) end
-      info.checked = ((BNP_DB and BNP_DB.targetArrowColor) or "match") == color
-      UIDropDownMenu_AddButton(info)
-    end
-  end)
-  frame.arrowColorDropdown = arrowColorDropdown
-  frame.SetTargetArrowColor = SetTargetArrowColor
 
   local arrowStyleLabel = targetPage:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   arrowStyleLabel:SetPoint("TOPLEFT", targetPage, "TOPLEFT", 210, -142)
@@ -1491,6 +1641,18 @@ function BNP:CreateOptions()
     SetCheckEnabled(self.darkComboPointBorderCheck, comboEnabled)
     SetCheckEnabled(self.darkNameplateBorderCheck, not (BNP.IsNameplateBorderHidden and BNP:IsNameplateBorderHidden()))
 
+    local invertTankEnabled = BNP:IsTankModeEnabled() and BNP:AreTankModeColorsInverted()
+    local function SetTankSwatchEnabled(swatch, enabled)
+      if not swatch then return end
+      swatch:SetAlpha(enabled and 1.0 or 0.45)
+      if swatch.EnableMouse then swatch:EnableMouse(enabled) end
+      if swatch.BNPLabel then
+        swatch.BNPLabel:SetTextColor(enabled and 1 or 0.5, enabled and 0.82 or 0.5, enabled and 0 or 0.5)
+      end
+    end
+    SetTankSwatchEnabled(self.invertAggroColorSwatch, invertTankEnabled)
+    SetTankSwatchEnabled(self.invertNoAggroColorSwatch, invertTankEnabled)
+
     local immunitiesEnabled = BNP.ArePvPImmunitiesEnabled and BNP:ArePvPImmunitiesEnabled() or false
     if self.immunityIconSlider then
       self.immunityIconSlider:SetAlpha(immunitiesEnabled and 1.0 or 0.45)
@@ -1521,16 +1683,12 @@ function BNP:CreateOptions()
     local glowEnabled = BNP:IsTargetFocusEnabled()
     local arrowsEnabled = BNP.AreTargetArrowsEnabled and BNP:AreTargetArrowsEnabled() or false
     local targetColorEnabled = glowEnabled or arrowsEnabled
-    if self.glowColorLabel then
-      self.glowColorLabel:SetTextColor(targetColorEnabled and 1 or 0.5, targetColorEnabled and 0.82 or 0.5, targetColorEnabled and 0 or 0.5)
+    if self.targetColorLabel then
+      self.targetColorLabel:SetTextColor(targetColorEnabled and 1 or 0.5, targetColorEnabled and 0.82 or 0.5, targetColorEnabled and 0 or 0.5)
     end
-    if self.glowColorDropdown then
-      self.glowColorDropdown:SetAlpha(targetColorEnabled and 1.0 or 0.45)
-      if targetColorEnabled then
-        if UIDropDownMenu_EnableDropDown then UIDropDownMenu_EnableDropDown(self.glowColorDropdown) end
-      else
-        if UIDropDownMenu_DisableDropDown then UIDropDownMenu_DisableDropDown(self.glowColorDropdown) end
-      end
+    if self.targetColorSwatch then
+      self.targetColorSwatch:SetAlpha(targetColorEnabled and 1.0 or 0.45)
+      if self.targetColorSwatch.EnableMouse then self.targetColorSwatch:EnableMouse(targetColorEnabled) end
     end
     if self.targetGlowSizeSlider then
       self.targetGlowSizeSlider:SetAlpha(glowEnabled and 1.0 or 0.45)
@@ -1539,17 +1697,6 @@ function BNP:CreateOptions()
     if self.targetGlowOpacitySlider then
       self.targetGlowOpacitySlider:SetAlpha(glowEnabled and 1.0 or 0.45)
       if self.targetGlowOpacitySlider.EnableMouse then self.targetGlowOpacitySlider:EnableMouse(glowEnabled) end
-    end
-    if self.arrowColorLabel then
-      self.arrowColorLabel:SetTextColor(arrowsEnabled and 1 or 0.5, arrowsEnabled and 0.82 or 0.5, arrowsEnabled and 0 or 0.5)
-    end
-    if self.arrowColorDropdown then
-      self.arrowColorDropdown:SetAlpha(arrowsEnabled and 1.0 or 0.45)
-      if arrowsEnabled then
-        if UIDropDownMenu_EnableDropDown then UIDropDownMenu_EnableDropDown(self.arrowColorDropdown) end
-      else
-        if UIDropDownMenu_DisableDropDown then UIDropDownMenu_DisableDropDown(self.arrowColorDropdown) end
-      end
     end
     if self.arrowStyleLabel then
       self.arrowStyleLabel:SetTextColor(arrowsEnabled and 1 or 0.5, arrowsEnabled and 0.82 or 0.5, arrowsEnabled and 0 or 0.5)
@@ -1712,6 +1859,8 @@ function BNP:SyncOptions()
   end
   frame.tankCheck:SetChecked(self:IsTankModeEnabled())
   if frame.invertTankColorsCheck then frame.invertTankColorsCheck:SetChecked(self:AreTankModeColorsInverted()) end
+  if frame.invertAggroColorSwatch and frame.invertAggroColorSwatch.RefreshColor then frame.invertAggroColorSwatch:RefreshColor() end
+  if frame.invertNoAggroColorSwatch and frame.invertNoAggroColorSwatch.RefreshColor then frame.invertNoAggroColorSwatch:RefreshColor() end
   if frame.comboPointsCheck and comboOptionsClass then
     frame.comboPointsCheck:SetChecked(self:AreComboPointsEnabled())
   end
@@ -1741,20 +1890,8 @@ function BNP:SyncOptions()
   if frame.targetArrowsCheck then
     frame.targetArrowsCheck:SetChecked(self.AreTargetArrowsEnabled and self:AreTargetArrowsEnabled() or false)
   end
-  if frame.arrowColorDropdown then
-    local _, _, _, color = self:GetTargetArrowColor()
-    local labels = {
-      match = "Match Target Color",
-      white = "White",
-      gold = "Gold",
-      blue = "Blue",
-      green = "Green",
-      red = "Red",
-      purple = "Purple",
-      black = "Black",
-    }
-    UIDropDownMenu_SetSelectedValue(frame.arrowColorDropdown, color or "match")
-    UIDropDownMenu_SetText(labels[color] or "Match Target Color", frame.arrowColorDropdown)
+  if frame.targetColorSwatch and frame.targetColorSwatch.RefreshColor then
+    frame.targetColorSwatch:RefreshColor()
   end
   if frame.arrowStyleDropdown then
     local style = self:GetTargetArrowStyle()
@@ -1777,20 +1914,6 @@ function BNP:SyncOptions()
     frame.targetArrowThickCheck:SetChecked(self.AreTargetArrowsThick and self:AreTargetArrowsThick() or false)
   end
 
-  if frame.glowColorDropdown then
-    local _, _, _, color = self:GetTargetGlowColor()
-    local labels = {
-      white = "White",
-      gold = "Gold",
-      blue = "Blue",
-      green = "Green",
-      red = "Red",
-      purple = "Purple",
-      black = "Black",
-    }
-    UIDropDownMenu_SetSelectedValue(frame.glowColorDropdown, color or "white")
-    UIDropDownMenu_SetText(labels[color] or "White", frame.glowColorDropdown)
-  end
   if frame.targetGlowSizeSlider then
     local glowSize = self:GetTargetGlowSize()
     frame.targetGlowSizeSlider:SetValue(glowSize)

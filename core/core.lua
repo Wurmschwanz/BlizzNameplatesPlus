@@ -1,5 +1,5 @@
 BNP = BNP or {}
-BNP.version = "1.0.10 ClassicAPI Event Test"
+BNP.version = "1.1.0"
 BNP.plates = BNP.plates or {}
 BNP.detected = 0
 BNP.debugEnabled = false

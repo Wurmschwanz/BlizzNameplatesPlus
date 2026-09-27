@@ -486,8 +486,13 @@ end
 -- modules/auras.lua is large and Vanilla/Lua has a hard local-variable limit.
 -- Exceeding it prevents the entire aura module from loading, which makes every
 -- aura disappear even though the actual tracking code is fine.
-BNP.COOLDOWN_STEPS_PER_QUARTER = 12
-BNP.COOLDOWN_TOTAL_STEPS = 48
+-- The renderer used to use only 48 visual steps and was refreshed on the
+-- normal 0.05s aura tick. Keep aura tracking at that proven cadence, but give
+-- the cosmetic shade much finer granularity and animate it independently.
+BNP.COOLDOWN_STEPS_PER_QUARTER = 240
+BNP.COOLDOWN_TOTAL_STEPS = 960
+BNP.COOLDOWN_ANIMATION_INTERVAL = 0.025
+BNP.activeAuraCooldownIcons = BNP.activeAuraCooldownIcons or {}
 
 function BNP:_SetAuraShadeTexture(tex)
   tex:SetTexture("Interface\\Buttons\\WHITE8X8")
@@ -609,6 +614,9 @@ function BNP:_HideAuraCooldown(icon)
   icon.BNPCooldownStart = nil
   icon.BNPCooldownDuration = nil
   icon.BNPCooldownExpires = nil
+  if self.activeAuraCooldownIcons then
+    self.activeAuraCooldownIcons[icon] = nil
+  end
 end
 
 function BNP:_UpdateAuraCooldown(icon, aura, def, now)
@@ -645,6 +653,8 @@ function BNP:_UpdateAuraCooldown(icon, aura, def, now)
   icon.BNPCooldownStart = startTime
   icon.BNPCooldownDuration = effectiveDuration
   icon.BNPCooldownExpires = expires
+  self.activeAuraCooldownIcons = self.activeAuraCooldownIcons or {}
+  self.activeAuraCooldownIcons[icon] = true
 end
 
 -- The spiral is cosmetic. Any unexpected old-client UI error is isolated here
@@ -674,6 +684,46 @@ function BNP:RefreshAuraCooldownSpirals()
     end
   end
 end
+
+-- Smooth visual-only animator. This does not scan units, auras or ClassicAPI.
+-- It touches only icons that already have a live cooldown shade and uses the
+-- start/duration cached by the normal renderer. This keeps the expensive aura
+-- logic at 20 Hz while the cosmetic sweep can move at up to ~40 Hz.
+BNP.AuraCooldownAnimator = BNP.AuraCooldownAnimator or CreateFrame("Frame")
+BNP.AuraCooldownAnimator.BNPElapsed = 0
+BNP.AuraCooldownAnimator:SetScript("OnUpdate", function()
+  if not BNP_DB or BNP_DB.cooldownSpiral ~= true then return end
+
+  this.BNPElapsed = (this.BNPElapsed or 0) + arg1
+  if this.BNPElapsed < (BNP.COOLDOWN_ANIMATION_INTERVAL or 0.025) then return end
+  this.BNPElapsed = 0
+
+  local active = BNP.activeAuraCooldownIcons
+  if not active then return end
+
+  local now = GetTime()
+  local icon
+  for icon in pairs(active) do
+    if not icon or not icon.BNPCooldown or not icon:IsShown() then
+      active[icon] = nil
+    else
+      local startTime = tonumber(icon.BNPCooldownStart)
+      local duration = tonumber(icon.BNPCooldownDuration)
+      local expires = tonumber(icon.BNPCooldownExpires)
+      if not startTime or not duration or duration <= 0 or not expires or expires <= now then
+        BNP:_HideAuraCooldown(icon)
+      else
+        local progress = (now - startTime) / duration
+        if progress < 0 then progress = 0 end
+        if progress > 1 then progress = 1 end
+        local step = math.floor((progress * BNP.COOLDOWN_TOTAL_STEPS) + 0.5)
+        if step < 0 then step = 0 end
+        if step > BNP.COOLDOWN_TOTAL_STEPS then step = BNP.COOLDOWN_TOTAL_STEPS end
+        BNP:_UpdateAuraCustomShade(icon, icon.BNPCooldown, step)
+      end
+    end
+  end
+end)
 
 local function HidePlateAuraFrames(plate)
   if not plate then return end

@@ -2,7 +2,8 @@ BNP = BNP or {}
 
 -- Tank Mode for SuperWoW GUID nameplates.
 -- Default: GREEN = hostile NPC currently targets the player, RED = another unit.
--- Optional Invert Tank Colors reverses those two states.
+-- Normal Tank Mode is fixed: GREEN = aggro, RED = no aggro.
+-- Invert Tank Colors uses two independently user-selectable colors.
 -- Idle hostile NPCs keep their normal Blizzard color.
 
 local GREEN_R, GREEN_G, GREEN_B = 0.00, 1.00, 0.00
@@ -125,13 +126,15 @@ function BNP:UpdateTankModePlate(plate)
 
   if targetGUID and targetGUID == myGUID then
     if inverted then
-      ApplyTankColor(plate, bar, RED_R, RED_G, RED_B)
+      local r, g, b = self:GetInvertTankAggroColor()
+      ApplyTankColor(plate, bar, r, g, b)
     else
       ApplyTankColor(plate, bar, GREEN_R, GREEN_G, GREEN_B)
     end
   elseif targetGUID then
     if inverted then
-      ApplyTankColor(plate, bar, GREEN_R, GREEN_G, GREEN_B)
+      local r, g, b = self:GetInvertTankNoAggroColor()
+      ApplyTankColor(plate, bar, r, g, b)
     else
       ApplyTankColor(plate, bar, RED_R, RED_G, RED_B)
     end
