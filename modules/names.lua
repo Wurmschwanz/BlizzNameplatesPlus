@@ -55,6 +55,13 @@ local function ResolvePlateType(plate)
     return "player"
   end
 
+  -- Keep player-controlled pets separate from the NPC/Mob name filter. A pet
+  -- plate should not suddenly lose its name just because "Hide NPC/Mob Names"
+  -- is enabled.
+  if UnitPlayerControlled and UnitPlayerControlled(token) then
+    return "pet"
+  end
+
   return "npc"
 end
 

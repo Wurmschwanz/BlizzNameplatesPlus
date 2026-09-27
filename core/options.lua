@@ -812,6 +812,11 @@ function BNP:CreateOptions()
   end)
   frame.auraFontSizeSlider = auraFontSize
 
+  frame.cooldownSpiralCheck = CreateCheck(aurasPage, "Cooldown Spiral", -126, function()
+    BNP_DB.cooldownSpiral = this:GetChecked() and true or false
+    if BNP.RefreshAuraCooldownSpirals then BNP:RefreshAuraCooldownSpirals() end
+  end, 208)
+
   local debuffYOffset = CreateSlider(aurasPage, "Debuff Y Offset", -50, 50, 1, -78, 220, 150)
   debuffYOffset:SetScript("OnValueChanged", function()
     if not BNP_DB then return end
@@ -1593,6 +1598,7 @@ function BNP:SyncOptions()
     frame.auraFontSizeSlider:SetValue(auraFontSize)
     getglobal(frame.auraFontSizeSlider:GetName() .. "Text"):SetText("Aura Font Size: " .. auraFontSize)
   end
+  if frame.cooldownSpiralCheck then frame.cooldownSpiralCheck:SetChecked(self:IsAuraCooldownSpiralEnabled()) end
   if frame.ccIconSlider then
     local ccSize = self:GetCCIconSize()
     frame.ccIconSlider:SetValue(ccSize)

@@ -36,7 +36,10 @@ end
 
 local function IsHostileNPC(guid)
   if not guid or not UnitExists(guid) then return false end
-  if UnitIsPlayer(guid) then return false end
+  if UnitIsPlayer and UnitIsPlayer(guid) then return false end
+  -- Player-controlled pets/guardians are not NPC tank targets. Treating them
+  -- as hostile NPCs made Tank Mode overwrite their normal pet plate colors.
+  if UnitPlayerControlled and UnitPlayerControlled(guid) then return false end
   return UnitCanAttack("player", guid) and true or false
 end
 

@@ -9,6 +9,7 @@ BNP.defaults = BNP.defaults or {
   nonTargetAlpha = 1.0,
   iconSize = 18,
   auraFontSize = 8,
+  cooldownSpiral = false,
   ccIconSize = 18,
   debuffYOffset = 0,
   ccYOffset = 0,
@@ -68,6 +69,7 @@ function BNP:InitConfig()
   if BNP_DB.nonTargetAlpha == nil then BNP_DB.nonTargetAlpha = self.defaults.nonTargetAlpha end
   if BNP_DB.iconSize == nil then BNP_DB.iconSize = self.defaults.iconSize end
   if BNP_DB.auraFontSize == nil then BNP_DB.auraFontSize = self.defaults.auraFontSize end
+  if BNP_DB.cooldownSpiral == nil then BNP_DB.cooldownSpiral = self.defaults.cooldownSpiral end
   if BNP_DB.ccIconSize == nil then BNP_DB.ccIconSize = BNP_DB.iconSize or self.defaults.ccIconSize end
   if BNP_DB.debuffYOffset == nil then BNP_DB.debuffYOffset = self.defaults.debuffYOffset end
   if BNP_DB.ccYOffset == nil then BNP_DB.ccYOffset = self.defaults.ccYOffset end
@@ -432,6 +434,10 @@ end
 
 function BNP:AreCrowdControlEnabled()
   return not BNP_DB or BNP_DB.crowdControl ~= false
+end
+
+function BNP:IsAuraCooldownSpiralEnabled()
+  return BNP_DB and BNP_DB.cooldownSpiral == true
 end
 
 function BNP:AreAnyAurasEnabled()

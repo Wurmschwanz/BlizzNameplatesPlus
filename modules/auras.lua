@@ -300,6 +300,12 @@ local function ApplyAuraFrameLevel(plate, container)
        icon:GetFrameLevel() ~= level then
       icon:SetFrameLevel(level)
     end
+    if icon and icon.BNPCooldown and icon.BNPCooldown.SetFrameLevel then
+      icon.BNPCooldown:SetFrameLevel(level + 1)
+    end
+    if icon and icon.BNPTextOverlay and icon.BNPTextOverlay.SetFrameLevel then
+      icon.BNPTextOverlay:SetFrameLevel(level + 2)
+    end
   end
 end
 
@@ -441,14 +447,23 @@ local function CreateAuraIcon(parent, index)
   texture:SetAllPoints(icon)
   icon.texture = texture
 
-  local timer = icon:CreateFontString(nil, "OVERLAY")
+  -- Keep timer/stack on their own child frame so they always render above
+  -- the optional cooldown shade.  The shade itself remains untouched.
+  local textOverlay = CreateFrame("Frame", nil, icon)
+  textOverlay:SetAllPoints(icon)
+  if textOverlay.SetFrameLevel and icon.GetFrameLevel then
+    textOverlay:SetFrameLevel(icon:GetFrameLevel() + 2)
+  end
+  icon.BNPTextOverlay = textOverlay
+
+  local timer = textOverlay:CreateFontString(nil, "OVERLAY")
   local auraFontSize = (BNP.GetAuraFontSize and BNP:GetAuraFontSize()) or (UI.TIMER_SIZE or 8)
   timer:SetFont(UI.TIMER_FONT or "Fonts\\FRIZQT__.TTF", auraFontSize, "OUTLINE")
   timer:SetPoint("CENTER", icon, "CENTER", UI.TIMER_OFFSET_X or 0, UI.TIMER_OFFSET_Y or 0)
   timer:SetTextColor(1, 1, 1)
   icon.timer = timer
 
-  local stack = icon:CreateFontString(nil, "OVERLAY")
+  local stack = textOverlay:CreateFontString(nil, "OVERLAY")
   stack:SetFont(UI.TIMER_FONT or "Fonts\\FRIZQT__.TTF", auraFontSize, "OUTLINE")
   stack:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", -1, 1)
   stack:SetTextColor(1, 1, 1)
@@ -461,6 +476,205 @@ local function CreateAuraIcon(parent, index)
   return icon
 end
 
+-- Optional AuraCore-style cooldown shade.
+--
+-- Vanilla 1.12's CooldownFrameTemplate is an animated Model. AuraCore already
+-- hit the same class of problems, so BNP deliberately does NOT use that model.
+-- Instead it draws a lightweight clockwise grey shade itself.
+--
+-- Keep every helper on BNP rather than declaring additional top-level locals:
+-- modules/auras.lua is large and Vanilla/Lua has a hard local-variable limit.
+-- Exceeding it prevents the entire aura module from loading, which makes every
+-- aura disappear even though the actual tracking code is fine.
+BNP.COOLDOWN_STEPS_PER_QUARTER = 12
+BNP.COOLDOWN_TOTAL_STEPS = 48
+
+function BNP:_SetAuraShadeTexture(tex)
+  tex:SetTexture("Interface\\Buttons\\WHITE8X8")
+  tex:SetVertexColor(0.02, 0.02, 0.02, 0.82)
+end
+
+function BNP:_EnsureAuraCooldown(icon)
+  if not icon then return nil end
+  if icon.BNPCooldown then return icon.BNPCooldown end
+
+  local shade = CreateFrame("Frame", nil, icon)
+  shade:SetAllPoints(icon)
+  shade:EnableMouse(false)
+  if shade.SetFrameLevel and icon.GetFrameLevel then
+    shade:SetFrameLevel(icon:GetFrameLevel())
+  end
+  shade:Hide()
+
+  local q1 = shade:CreateTexture(nil, "ARTWORK")
+  local q2 = shade:CreateTexture(nil, "ARTWORK")
+  local q3 = shade:CreateTexture(nil, "ARTWORK")
+  local q4 = shade:CreateTexture(nil, "ARTWORK")
+  self:_SetAuraShadeTexture(q1)
+  self:_SetAuraShadeTexture(q2)
+  self:_SetAuraShadeTexture(q3)
+  self:_SetAuraShadeTexture(q4)
+  q1:Hide(); q2:Hide(); q3:Hide(); q4:Hide()
+
+  shade.BNPQuarters = { q1, q2, q3, q4 }
+  shade.BNPLastStep = -1
+  icon.BNPCooldown = shade
+  icon.BNPCooldownStep = -1
+  return shade
+end
+
+function BNP:_SetAuraQuarterFull(tex, quarter, icon, halfW, halfH)
+  tex:ClearAllPoints()
+  if quarter == 1 then
+    tex:SetPoint("TOPLEFT", icon, "TOP", 0, 0)
+  elseif quarter == 2 then
+    tex:SetPoint("TOPRIGHT", icon, "RIGHT", 0, 0)
+  elseif quarter == 3 then
+    tex:SetPoint("BOTTOMRIGHT", icon, "BOTTOM", 0, 0)
+  else
+    tex:SetPoint("BOTTOMLEFT", icon, "LEFT", 0, 0)
+  end
+  tex:SetWidth(halfW)
+  tex:SetHeight(halfH)
+  tex:Show()
+end
+
+function BNP:_SetAuraQuarterPartial(tex, quarter, icon, fraction, halfW, halfH)
+  if fraction <= 0 then tex:Hide(); return end
+  if fraction >= 1 then
+    self:_SetAuraQuarterFull(tex, quarter, icon, halfW, halfH)
+    return
+  end
+
+  tex:ClearAllPoints()
+  if quarter == 1 then
+    -- 12 -> 3: grow from top-centre towards the right.
+    tex:SetPoint("TOPLEFT", icon, "TOP", 0, 0)
+    tex:SetWidth(halfW * fraction)
+    tex:SetHeight(halfH)
+  elseif quarter == 2 then
+    -- 3 -> 6: grow from right-centre downwards.
+    tex:SetPoint("TOPRIGHT", icon, "RIGHT", 0, 0)
+    tex:SetWidth(halfW)
+    tex:SetHeight(halfH * fraction)
+  elseif quarter == 3 then
+    -- 6 -> 9: grow from bottom-centre towards the left.
+    tex:SetPoint("BOTTOMRIGHT", icon, "BOTTOM", 0, 0)
+    tex:SetWidth(halfW * fraction)
+    tex:SetHeight(halfH)
+  else
+    -- 9 -> 12: grow from left-centre upwards.
+    tex:SetPoint("BOTTOMLEFT", icon, "LEFT", 0, 0)
+    tex:SetWidth(halfW)
+    tex:SetHeight(halfH * fraction)
+  end
+  tex:Show()
+end
+
+function BNP:_UpdateAuraCustomShade(icon, shade, step)
+  if not icon or not shade or not shade.BNPQuarters then return end
+  if shade.BNPLastStep == step then return end
+  shade.BNPLastStep = step
+  icon.BNPCooldownStep = step
+
+  local width = (icon.GetWidth and icon:GetWidth()) or GetIconSize()
+  local height = (icon.GetHeight and icon:GetHeight()) or GetIconSize()
+  local halfW = width * 0.5
+  local halfH = height * 0.5
+  local q
+  for q = 1, 4 do
+    local tex = shade.BNPQuarters[q]
+    local localStep = step - ((q - 1) * self.COOLDOWN_STEPS_PER_QUARTER)
+    if localStep <= 0 then
+      tex:Hide()
+    elseif localStep >= self.COOLDOWN_STEPS_PER_QUARTER then
+      self:_SetAuraQuarterFull(tex, q, icon, halfW, halfH)
+    else
+      self:_SetAuraQuarterPartial(tex, q, icon, localStep / self.COOLDOWN_STEPS_PER_QUARTER, halfW, halfH)
+    end
+  end
+  shade:Show()
+end
+
+function BNP:_HideAuraCooldown(icon)
+  if not icon or not icon.BNPCooldown then return end
+  local shade = icon.BNPCooldown
+  if shade.BNPQuarters then
+    local i
+    for i = 1, 4 do shade.BNPQuarters[i]:Hide() end
+  end
+  shade.BNPLastStep = -1
+  shade:Hide()
+  icon.BNPCooldownStep = -1
+  icon.BNPCooldownStart = nil
+  icon.BNPCooldownDuration = nil
+  icon.BNPCooldownExpires = nil
+end
+
+function BNP:_UpdateAuraCooldown(icon, aura, def, now)
+  if not icon then return end
+  if not self:IsAuraCooldownSpiralEnabled() then
+    self:_HideAuraCooldown(icon)
+    return
+  end
+
+  local expires = aura and tonumber(aura.expires) or nil
+  local duration = aura and tonumber(aura.duration) or nil
+  if (not duration or duration <= 0) and def then duration = tonumber(def.duration) end
+  now = now or GetTime()
+  if not expires or expires <= now or not duration or duration <= 0 then
+    self:_HideAuraCooldown(icon)
+    return
+  end
+
+  local remaining = expires - now
+  local effectiveDuration = duration
+  if remaining > effectiveDuration then effectiveDuration = remaining end
+  local startTime = expires - effectiveDuration
+  local progress = (now - startTime) / effectiveDuration
+  if progress < 0 then progress = 0 end
+  if progress > 1 then progress = 1 end
+
+  local step = math.floor((progress * self.COOLDOWN_TOTAL_STEPS) + 0.5)
+  if step < 0 then step = 0 end
+  if step > self.COOLDOWN_TOTAL_STEPS then step = self.COOLDOWN_TOTAL_STEPS end
+
+  local shade = self:_EnsureAuraCooldown(icon)
+  if not shade then return end
+  self:_UpdateAuraCustomShade(icon, shade, step)
+  icon.BNPCooldownStart = startTime
+  icon.BNPCooldownDuration = effectiveDuration
+  icon.BNPCooldownExpires = expires
+end
+
+-- The spiral is cosmetic. Any unexpected old-client UI error is isolated here
+-- and can never abort the actual debuff/CC renderer.
+function BNP:_SafeUpdateAuraCooldown(icon, aura, def, now)
+  local ok = pcall(self._UpdateAuraCooldown, self, icon, aura, def, now)
+  if not ok and icon and icon.BNPCooldown then icon.BNPCooldown:Hide() end
+end
+
+function BNP:RefreshAuraCooldownSpirals()
+  local enabled = self:IsAuraCooldownSpiralEnabled()
+  local plate, _, container, i
+  for plate in pairs(self.plates or {}) do
+    for _, container in ipairs({ plate.BNPAuraContainer, plate.BNPCCContainer }) do
+      if container then
+        for i = 1, table.getn(container.icons or {}) do
+          local icon = container.icons[i]
+          if not enabled then
+            self:_HideAuraCooldown(icon)
+          elseif icon and icon:IsShown() then
+            -- The normal renderer fills start/duration on the next 0.05s tick.
+            icon.BNPCooldownStart = nil
+            icon.BNPCooldownDuration = nil
+          end
+        end
+      end
+    end
+  end
+end
+
 local function HidePlateAuraFrames(plate)
   if not plate then return end
 
@@ -469,6 +683,7 @@ local function HidePlateAuraFrames(plate)
   for _, container in ipairs(containers) do
     if container then
       for i = 1, table.getn(container.icons or {}) do
+        BNP:_HideAuraCooldown(container.icons[i])
         container.icons[i]:Hide()
       end
       container:Hide()
@@ -835,7 +1050,8 @@ local function CheckCurrentTargetReset(now)
     return
   end
 
-  if UnitIsPlayer and UnitIsPlayer("target") then
+  if (UnitIsPlayer and UnitIsPlayer("target"))
+    or (UnitPlayerControlled and UnitPlayerControlled("target")) then
     resetWatch.guid = guid
     resetWatch.wasDamaged = nil
     return
@@ -2606,16 +2822,37 @@ end
 BuildGlobalCCDefs()
 
 local function ResolveGlobalCCDef(spellID, texture)
+  -- Prefer reliable aura identity over icon matching. Several unrelated auras
+  -- reuse the same Blizzard icon (for example Resurrection Sickness and
+  -- Howl of Terror), so texture matching must never override a known spell.
   if spellID and GLOBAL_CC_BY_ID[spellID] then return GLOBAL_CC_BY_ID[spellID] end
   if spellID and GLOBAL_CC_NEGATIVE[spellID] then return nil end
 
   local auraName = spellID and SpellInfo and SpellInfo(spellID) or nil
   local _, ccDef
-  for _, ccDef in ipairs(GLOBAL_CC_DEFS) do
-    if NameMatches(ccDef, auraName)
-      or (texture and ccDef.textureMatch and string.find(string.lower(texture), ccDef.textureMatch)) then
-      if spellID then GLOBAL_CC_BY_ID[spellID] = ccDef end
-      return ccDef
+
+  -- A known spell name is authoritative. If it is not one of our CCs, cache
+  -- the negative result and do not reinterpret it from a shared icon texture.
+  if auraName and auraName ~= "" then
+    for _, ccDef in ipairs(GLOBAL_CC_DEFS) do
+      if NameMatches(ccDef, auraName) then
+        if spellID then GLOBAL_CC_BY_ID[spellID] = ccDef end
+        return ccDef
+      end
+    end
+
+    if spellID then GLOBAL_CC_NEGATIVE[spellID] = true end
+    return nil
+  end
+
+  -- Texture is only a compatibility fallback for aura scans where ClassicAPI
+  -- cannot provide a usable spell ID/name.
+  if texture then
+    local lowerTexture = string.lower(texture)
+    for _, ccDef in ipairs(GLOBAL_CC_DEFS) do
+      if ccDef.textureMatch and string.find(lowerTexture, ccDef.textureMatch) then
+        return ccDef
+      end
     end
   end
 
@@ -2709,6 +2946,7 @@ local function HideCCRow(plate)
     icon.lastTimerText = nil
     icon.timer:SetText("")
     if icon.stack then icon.stack:SetText("") end
+    BNP:_HideAuraCooldown(icon)
     icon:Hide()
   end
   container:Hide()
@@ -2821,11 +3059,15 @@ local function UpdateCCRow(plate, guid, cache, now)
       end
       local timerText = FormatCCTimer(entry.remaining)
       if icon.lastTimerText ~= timerText then icon.timer:SetText(timerText); icon.lastTimerText = timerText end
+      if BNP_DB and BNP_DB.cooldownSpiral == true then
+        BNP:_SafeUpdateAuraCooldown(icon, entry.aura, entry.def, now)
+      end
       icon:Show()
     else
       icon.lastTimerText = nil
       icon.timer:SetText("")
       if icon.stack then icon.stack:SetText("") end
+      BNP:_HideAuraCooldown(icon)
       icon:Hide()
     end
   end
@@ -3059,6 +3301,12 @@ local function GetStablePlateGUID(plate, now)
 
   local guid = GetPlateGUID(plate)
   local stable = plate.BNPAuraGUIDStable
+  -- Player-controlled units (notably Hunter/Warlock pets) should not inherit
+  -- the long same-name NPC debounce. Pet nameplates are recycled like normal
+  -- plates, but holding the previous GUID here can briefly project a CC from
+  -- the old pet onto the new one.
+  local plateToken = GetUnitTokenForPlate(plate)
+  local playerControlled = plateToken and UnitPlayerControlled and UnitPlayerControlled(plateToken)
 
   -- Dense 40-player stacks can briefly lose the projected token. Keep the last
   -- confirmed identity long enough to bridge those gaps instead of hiding the
@@ -3089,7 +3337,7 @@ local function GetStablePlateGUID(plate, now)
     -- If Blizzard really reused the frame for a differently named unit, switch
     -- quickly. Same-name raid mobs are exactly where transient GUID/token swaps
     -- happen, so keep the previous stable GUID until the new candidate persists.
-    if stable and not plate.BNPAuraForceFreshIdentity and
+    if stable and not playerControlled and not plate.BNPAuraForceFreshIdentity and
        StableNameStillMatches(plate, stable) then
       return stable
     end
@@ -3099,7 +3347,7 @@ local function GetStablePlateGUID(plate, now)
   plate.BNPAuraGUIDCandidateCount = (plate.BNPAuraGUIDCandidateCount or 1) + 1
 
   local required = AURA_GUID_SWITCH_CONFIRM_UPDATES
-  if plate.BNPAuraForceFreshIdentity or
+  if playerControlled or plate.BNPAuraForceFreshIdentity or
      (stable and not StableNameStillMatches(plate, stable)) then
     required = AURA_GUID_CONFIRM_UPDATES
   end
@@ -3328,6 +3576,9 @@ local function UpdatePlate(plate, now)
         icon.lastTimerText = timerText
       end
 
+      if BNP_DB and BNP_DB.cooldownSpiral == true then
+        BNP:_SafeUpdateAuraCooldown(icon, entry.aura, entry.def, now)
+      end
       icon:Show()
     else
       icon.lastTimerText = nil
@@ -3335,6 +3586,7 @@ local function UpdatePlate(plate, now)
       icon.BNPLastStackText = nil
       icon.timer:SetText("")
       if icon.stack then icon.stack:SetText("") end
+      BNP:_HideAuraCooldown(icon)
       icon:Hide()
     end
   end
@@ -3520,8 +3772,8 @@ table.insert(BNP.libnameplate.OnInit, CreateCCContainer)
 table.insert(BNP.libnameplate.OnShow, CreateAuraContainer)
 table.insert(BNP.libnameplate.OnShow, CreateCCContainer)
 
--- Keep the proven central update loop and the existing icon implementation.
--- No CooldownFrame templates and no frames or tables are created here.
+-- Keep the proven central update loop. Optional CooldownFrames are created
+-- lazily per used icon only when Cooldown Spiral is enabled.
 local renderer = CreateFrame("Frame")
 local elapsedTotal = 0
 local removalElapsed = 0
@@ -3711,10 +3963,15 @@ foreignCCScanner:SetScript("OnUpdate", function()
   for plate in pairs(BNP.plates or {}) do
     if plate and plate:IsShown() and not plate.BNPClassicAuraEventDriven
       and GetForeignCCScanBucket(plate) == foreignCCScanBucket then
-      local guid = GetPlateGUID(plate)
-      if guid and guid ~= targetGUID then
+      -- Foreign CC scans are allowed to write only when the projected token
+      -- and the renderer agree on the exact GUID. This mirrors the safeguard
+      -- already used by destructive debuff-removal scans and prevents recycled
+      -- pet plates from receiving another unit's live CC state.
+      local rawGUID = GetPlateGUID(plate)
+      local stableGUID = GetStablePlateGUID(plate, now)
+      if rawGUID and stableGUID and rawGUID == stableGUID and stableGUID ~= targetGUID then
         local token = GetUnitTokenForPlate(plate)
-        if token then pcall(SyncForeignCCs, token, guid, now) end
+        if token then pcall(SyncForeignCCs, token, stableGUID, now) end
       end
     end
   end

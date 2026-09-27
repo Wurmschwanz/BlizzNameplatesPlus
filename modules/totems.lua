@@ -377,9 +377,12 @@ local function UpdateIndicator(plate, force)
     return
   end
 
-  -- Hard safety guard: a player nameplate can never be a shaman totem.
+  -- Hard safety guard: player and player-controlled pet plates can never be
+  -- shaman totems. Pets are not UnitIsPlayer(), so check UnitPlayerControlled
+  -- as well before doing any name-based totem replacement.
   local token = plate.GetName and plate:GetName(1) or nil
-  if token and UnitIsPlayer and UnitIsPlayer(token) then
+  if token and ((UnitIsPlayer and UnitIsPlayer(token))
+    or (UnitPlayerControlled and UnitPlayerControlled(token))) then
     if indicator then indicator:Hide() end
     RestoreTotemPlateVisuals(plate)
     plate.BNPTotemLastName = name
