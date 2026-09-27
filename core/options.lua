@@ -552,7 +552,7 @@ function BNP:CreateOptions()
   end)
   frame.nonTargetAlphaSlider = nonTargetAlpha
 
-  local classColors = CreateCheck(nameplatesPage, "Class Colors", -78, function()
+  local classColors = CreateCheck(nameplatesPage, "Class Colors", -82, function()
     BNP_DB.classColors = this:GetChecked() and true or false
     if BNP.RefreshClassColors then BNP:RefreshClassColors() end
   end, 214)
@@ -600,10 +600,10 @@ function BNP:CreateOptions()
   invertTankColors:SetScript("OnLeave", function() GameTooltip:Hide() end)
   frame.invertTankColorsCheck = invertTankColors
 
-  local darkNameplateBorder = CreateCheck(nameplatesPage, "Dark Nameplate Border", -130, function()
+  local darkNameplateBorder = CreateCheck(nameplatesPage, "Dark Border", -130, function()
     BNP_DB.darkNameplateBorder = this:GetChecked() and true or false
     if BNP.RefreshNameplateBorderStyle then BNP:RefreshNameplateBorderStyle() end
-  end)
+  end, 22)
   darkNameplateBorder:SetScript("OnEnter", function()
     GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
     GameTooltip:SetText("Dark Nameplate Border", 1, 0.82, 0)
@@ -615,11 +615,11 @@ function BNP:CreateOptions()
   frame.darkNameplateBorderCheck = darkNameplateBorder
 
   if comboOptionsClass then
-    local darkComboPointBorder = CreateCheck(nameplatesPage, "Dark Combo Point Border", -130, function()
+    local darkComboPointBorder = CreateCheck(nameplatesPage, "Dark CP Border", -130, function()
       BNP_DB.darkComboPointBorder = this:GetChecked() and true or false
       if BNP.RefreshComboPointBorderStyle then BNP:RefreshComboPointBorderStyle() end
       if BNP.RefreshComboPoints then BNP:RefreshComboPoints() end
-    end, 214)
+    end, 150)
     darkComboPointBorder:SetScript("OnEnter", function()
       GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
       GameTooltip:SetText("Dark Combo Point Border", 1, 0.82, 0)
@@ -631,20 +631,48 @@ function BNP:CreateOptions()
     frame.darkComboPointBorderCheck = darkComboPointBorder
   end
 
-  local hideNPCNames = CreateCheck(nameplatesPage, "Hide NPC/Mob Names", -182, function()
+  local hideNameplateBorder = CreateCheck(nameplatesPage, "Hide Border", -130, function()
+    BNP_DB.hideNameplateBorder = this:GetChecked() and true or false
+    if BNP.RefreshNameplateBorderStyle then BNP:RefreshNameplateBorderStyle() end
+    if frame.UpdateDependentControls then frame:UpdateDependentControls() end
+  end, 214)
+  hideNameplateBorder:SetScript("OnEnter", function()
+    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+    GameTooltip:SetText("Hide Nameplate Border", 1, 0.82, 0)
+    GameTooltip:AddLine("Hides only the native Blizzard nameplate border. BNP keeps the border reference internally so it can be restored safely.", 1, 1, 1, true)
+    GameTooltip:Show()
+  end)
+  hideNameplateBorder:SetScript("OnLeave", function() GameTooltip:Hide() end)
+  frame.hideNameplateBorderCheck = hideNameplateBorder
+
+  local hideNPCNames = CreateCheck(nameplatesPage, "Hide NPC Names", -182, function()
     BNP_DB.hideNPCNames = this:GetChecked() and true or false
     if BNP.RefreshNameVisibility then BNP:RefreshNameVisibility() end
   end, 214)
   frame.hideNPCNamesCheck = hideNPCNames
 
-  CreateSection(nameplatesPage, "Health Bar & Text", -250)
+  local hideNameplateLevel = CreateCheck(nameplatesPage, "Hide Level", -206, function()
+    BNP_DB.hideNameplateLevel = this:GetChecked() and true or false
+    if BNP.RefreshNameplateLevelVisibility then BNP:RefreshNameplateLevelVisibility() end
+    if BNP.RefreshCastbarLayout then BNP:RefreshCastbarLayout() end
+  end, 22)
+  hideNameplateLevel:SetScript("OnEnter", function()
+    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+    GameTooltip:SetText("Hide Nameplate Level", 1, 0.82, 0)
+    GameTooltip:AddLine("Hides the numeric Blizzard level text without removing BNP's internal reference to it. Boss/level icons are left untouched.", 1, 1, 1, true)
+    GameTooltip:Show()
+  end)
+  hideNameplateLevel:SetScript("OnLeave", function() GameTooltip:Hide() end)
+  frame.hideNameplateLevelCheck = hideNameplateLevel
+
+  CreateSection(nameplatesPage, "Health Bar & Text", -294)
 
   local healthTextLabel = nameplatesPage:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-  healthTextLabel:SetPoint("TOPLEFT", nameplatesPage, "TOPLEFT", 28, -278)
+  healthTextLabel:SetPoint("TOPLEFT", nameplatesPage, "TOPLEFT", 28, -322)
   healthTextLabel:SetText("Display")
 
   local healthTextDropdown = CreateFrame("Frame", "BNPHealthTextDropdown", nameplatesPage, "UIDropDownMenuTemplate")
-  healthTextDropdown:SetPoint("TOPLEFT", nameplatesPage, "TOPLEFT", 10, -290)
+  healthTextDropdown:SetPoint("TOPLEFT", nameplatesPage, "TOPLEFT", 10, -334)
   UIDropDownMenu_SetWidth(150, healthTextDropdown)
 
   local healthModeLabels = {
@@ -679,7 +707,7 @@ function BNP:CreateOptions()
   frame.healthTextDropdown = healthTextDropdown
   frame.SetHealthTextMode = SetHealthTextMode
 
-  local healthFontSize = CreateSlider(nameplatesPage, "Health Font Size", 8, 20, 1, -344, 28, 150)
+  local healthFontSize = CreateSlider(nameplatesPage, "Health Font Size", 8, 20, 1, -388, 28, 150)
   healthFontSize:SetScript("OnValueChanged", function()
     if not BNP_DB or frame.BNPSyncingHealthTextControls then return end
     local value = math.floor(this:GetValue() + 0.5)
@@ -689,7 +717,7 @@ function BNP:CreateOptions()
   end)
   frame.healthTextFontSizeSlider = healthFontSize
 
-  local blackHealthbarBackground = CreateCheck(nameplatesPage, "Black Health Background", -340, function()
+  local blackHealthbarBackground = CreateCheck(nameplatesPage, "Black Health Background", -384, function()
     BNP_DB.blackHealthbarBackground = this:GetChecked() and true or false
     if BNP.RefreshHealthbarBackground then BNP:RefreshHealthbarBackground() end
   end, 214)
@@ -703,11 +731,11 @@ function BNP:CreateOptions()
   frame.blackHealthbarBackgroundCheck = blackHealthbarBackground
 
   local healthOutlineLabel = nameplatesPage:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-  healthOutlineLabel:SetPoint("TOPLEFT", nameplatesPage, "TOPLEFT", 220, -278)
+  healthOutlineLabel:SetPoint("TOPLEFT", nameplatesPage, "TOPLEFT", 220, -322)
   healthOutlineLabel:SetText("Outline")
 
   local healthOutlineDropdown = CreateFrame("Frame", "BNPHealthOutlineDropdown", nameplatesPage, "UIDropDownMenuTemplate")
-  healthOutlineDropdown:SetPoint("TOPLEFT", nameplatesPage, "TOPLEFT", 200, -290)
+  healthOutlineDropdown:SetPoint("TOPLEFT", nameplatesPage, "TOPLEFT", 200, -334)
   UIDropDownMenu_SetWidth(150, healthOutlineDropdown)
 
   local healthOutlineLabels = {
@@ -741,9 +769,9 @@ function BNP:CreateOptions()
   frame.SetHealthTextOutline = SetHealthTextOutline
 
   if comboOptionsClass then
-    CreateSection(nameplatesPage, "Combo Points", -380)
+    CreateSection(nameplatesPage, "Combo Points", -424)
 
-    local comboPoints = CreateCheck(nameplatesPage, "Combo Points", -406, function()
+    local comboPoints = CreateCheck(nameplatesPage, "Combo Points", -450, function()
       BNP_DB.comboPoints = this:GetChecked() and true or false
       if BNP.RefreshComboPoints then BNP:RefreshComboPoints() end
       if BNP.RefreshAllAuraLayouts then BNP:RefreshAllAuraLayouts() end
@@ -752,7 +780,7 @@ function BNP:CreateOptions()
     end, 22)
     frame.comboPointsCheck = comboPoints
 
-    local comboYOffset = CreateSlider(nameplatesPage, "Combo Point Y Offset", -50, 50, 1, -408, 220, 150)
+    local comboYOffset = CreateSlider(nameplatesPage, "Combo Point Y Offset", -50, 50, 1, -452, 220, 150)
     comboYOffset:SetScript("OnValueChanged", function()
       if not BNP_DB then return end
       local value = RoundSignedInteger(this:GetValue())
@@ -766,7 +794,7 @@ function BNP:CreateOptions()
 
   -- Name text controls are independent from Nameplate Scale. The size setting
   -- only touches the Blizzard name FontString; the Y offset only moves it.
-  local nameFontSize = CreateSlider(nameplatesPage, "Name Font Size", 8, 24, 1, -216, 28, 150)
+  local nameFontSize = CreateSlider(nameplatesPage, "Name Font Size", 8, 24, 1, -250, 28, 150)
   nameFontSize:SetScript("OnValueChanged", function()
     if not BNP_DB or frame.BNPSyncingNameControls then return end
     local value = math.floor(this:GetValue() + 0.5)
@@ -776,7 +804,7 @@ function BNP:CreateOptions()
   end)
   frame.nameFontSizeSlider = nameFontSize
 
-  local nameFontYOffset = CreateSlider(nameplatesPage, "Name Y Offset", -50, 50, 1, -216, 220, 150)
+  local nameFontYOffset = CreateSlider(nameplatesPage, "Name Y Offset", -50, 50, 1, -250, 220, 150)
   nameFontYOffset:SetScript("OnValueChanged", function()
     if not BNP_DB or frame.BNPSyncingNameControls then return end
     local value = RoundSignedInteger(this:GetValue())
@@ -1461,6 +1489,7 @@ function BNP:CreateOptions()
       if self.comboPointsYOffsetSlider.EnableMouse then self.comboPointsYOffsetSlider:EnableMouse(comboEnabled) end
     end
     SetCheckEnabled(self.darkComboPointBorderCheck, comboEnabled)
+    SetCheckEnabled(self.darkNameplateBorderCheck, not (BNP.IsNameplateBorderHidden and BNP:IsNameplateBorderHidden()))
 
     local immunitiesEnabled = BNP.ArePvPImmunitiesEnabled and BNP:ArePvPImmunitiesEnabled() or false
     if self.immunityIconSlider then
@@ -1641,6 +1670,12 @@ function BNP:SyncOptions()
   frame.classColorsCheck:SetChecked(self:AreClassColorsEnabled())
   if frame.darkNameplateBorderCheck then
     frame.darkNameplateBorderCheck:SetChecked(self:IsDarkNameplateBorderEnabled())
+  end
+  if frame.hideNameplateBorderCheck then
+    frame.hideNameplateBorderCheck:SetChecked(self:IsNameplateBorderHidden())
+  end
+  if frame.hideNameplateLevelCheck then
+    frame.hideNameplateLevelCheck:SetChecked(self:IsNameplateLevelHidden())
   end
   if frame.blackHealthbarBackgroundCheck then
     frame.blackHealthbarBackgroundCheck:SetChecked(self:IsBlackHealthbarBackgroundEnabled())

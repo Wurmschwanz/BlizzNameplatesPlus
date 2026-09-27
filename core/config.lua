@@ -19,6 +19,8 @@ BNP.defaults = BNP.defaults or {
   invertTankColors = false,
   classColors = true,
   darkNameplateBorder = false,
+  hideNameplateBorder = false,
+  hideNameplateLevel = false,
   blackHealthbarBackground = false,
   darkComboPointBorder = false,
   hidePlayerNames = false,
@@ -79,6 +81,8 @@ function BNP:InitConfig()
   if BNP_DB.invertTankColors == nil then BNP_DB.invertTankColors = self.defaults.invertTankColors end
   if BNP_DB.classColors == nil then BNP_DB.classColors = self.defaults.classColors end
   if BNP_DB.darkNameplateBorder == nil then BNP_DB.darkNameplateBorder = self.defaults.darkNameplateBorder end
+  if BNP_DB.hideNameplateBorder == nil then BNP_DB.hideNameplateBorder = self.defaults.hideNameplateBorder end
+  if BNP_DB.hideNameplateLevel == nil then BNP_DB.hideNameplateLevel = self.defaults.hideNameplateLevel end
   if BNP_DB.blackHealthbarBackground == nil then BNP_DB.blackHealthbarBackground = self.defaults.blackHealthbarBackground end
   if BNP_DB.darkComboPointBorder == nil then BNP_DB.darkComboPointBorder = self.defaults.darkComboPointBorder end
   if BNP_DB.hidePlayerNames == nil then BNP_DB.hidePlayerNames = self.defaults.hidePlayerNames end
@@ -252,6 +256,14 @@ end
 
 function BNP:IsDarkNameplateBorderEnabled()
   return BNP_DB and BNP_DB.darkNameplateBorder and true or false
+end
+
+function BNP:IsNameplateBorderHidden()
+  return BNP_DB and BNP_DB.hideNameplateBorder and true or false
+end
+
+function BNP:IsNameplateLevelHidden()
+  return BNP_DB and BNP_DB.hideNameplateLevel and true or false
 end
 
 function BNP:IsBlackHealthbarBackgroundEnabled()

@@ -196,22 +196,39 @@ local function GetBottomAuraClearance(plate)
   return 0
 end
 
+local function RegionShown(region)
+  if not region then return false end
+  if region.IsShown then return region:IsShown() end
+  return true
+end
+
+local function GetCastbarEndExtension(plate)
+  -- Preserve the classic +14px room while either native right-side level
+  -- region is actually visible. When Hide Level removes the numeric text and
+  -- there is no boss/level icon, the castbar ends flush with the healthbar.
+  if plate and (RegionShown(plate.level) or RegionShown(plate.levelicon)) then
+    return 14
+  end
+  return 0
+end
+
 local function ApplyCastbarLayout(plate, bar)
   if not plate or not plate.healthbar or not bar then return end
   local gap = BAR_GAP + GetBottomAuraClearance(plate)
   local xOffset = GetCastbarXOffset()
   local yOffset = GetCastbarYOffset()
   local barStartOffset = GetCastbarStartOffset()
+  local endExtension = GetCastbarEndExtension(plate)
 
   bar:ClearAllPoints()
   bar:SetPoint("TOPLEFT", plate.healthbar, "BOTTOMLEFT", barStartOffset + xOffset, -gap + yOffset)
-  bar:SetPoint("TOPRIGHT", plate.healthbar, "BOTTOMRIGHT", 14 + xOffset, -gap + yOffset)
+  bar:SetPoint("TOPRIGHT", plate.healthbar, "BOTTOMRIGHT", endExtension + xOffset, -gap + yOffset)
 
-  -- Store the width implied by those two anchors. The +14 is the extension
-  -- beneath the Blizzard level badge; xOffset cancels because it moves both
-  -- edges equally. This is also the exact travel distance for the cast spark.
+  -- Store the width implied by those two anchors. xOffset cancels because it
+  -- moves both edges equally. This is also the exact travel distance for the
+  -- cast spark.
   local healthWidth = plate.healthbar:GetWidth() or 0
-  bar.BNPRenderWidth = healthWidth + 14 - barStartOffset
+  bar.BNPRenderWidth = healthWidth + endExtension - barStartOffset
   if bar.BNPRenderWidth < 0 then bar.BNPRenderWidth = 0 end
 
   if bar.icon then

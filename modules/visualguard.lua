@@ -27,9 +27,19 @@ local function RestoreBorder(plate)
     border:SetTexture(BORDER_TEXTURE)
   end
 
+  local hidden = BNP.IsNameplateBorderHidden and BNP:IsNameplateBorderHidden()
+  if hidden then
+    if border.IsShown and border.Hide and border:IsShown() then border:Hide() end
+    plate.BNPBorderHidden = true
+    return
+  end
+
+  -- Restore only the visibility state BNP owns. The historical visual guard
+  -- also repairs borders hidden by skin patches when the hide option is off.
   if border.IsShown and border.Show and not border:IsShown() then
     border:Show()
   end
+  plate.BNPBorderHidden = nil
 end
 
 local function RestoreGlow(plate)
@@ -62,6 +72,7 @@ end
 local function ApplyBorderStyle(plate)
   local border = plate and plate.border
   if not border then return end
+  if BNP.IsNameplateBorderHidden and BNP:IsNameplateBorderHidden() then return end
 
   if BNP.IsDarkNameplateBorderEnabled and BNP:IsDarkNameplateBorderEnabled() then
     -- Match ShaguTweaks' default Darkened UI color, but touch only the native
@@ -73,6 +84,29 @@ local function ApplyBorderStyle(plate)
     -- global Darkened UI mode previously tinted this texture.
     SetBorderVertexColor(border, 1, 1, 1, 1)
   end
+end
+
+local function ApplyLevelVisibility(plate)
+  local level = plate and plate.level
+  if not level then return end
+
+  local hidden = BNP.IsNameplateLevelHidden and BNP:IsNameplateLevelHidden()
+  if hidden then
+    if level.IsShown and level.Hide and level:IsShown() then level:Hide() end
+    plate.BNPLevelHidden = true
+    return
+  end
+
+  if plate.BNPLevelHidden then
+    if level.Show then level:Show() end
+    plate.BNPLevelHidden = nil
+  end
+end
+
+local function ApplyOptionalNativeVisibility(plate)
+  if not plate or IsTotemIconOnly(plate) then return end
+  RestoreBorder(plate)
+  ApplyLevelVisibility(plate)
 end
 
 local function ApplyHealthbarBackground(plate)
@@ -117,6 +151,7 @@ function BNP:RepairNativeNameplateVisuals(plate)
   RestoreBorder(plate)
   RestoreGlow(plate)
   ApplyBorderStyle(plate)
+  ApplyLevelVisibility(plate)
   ApplyHealthbarBackground(plate)
 end
 
@@ -124,6 +159,17 @@ function BNP:RefreshNameplateBorderStyle()
   local plate
   for plate in pairs(BNP.plates or {}) do
     self:RepairNativeNameplateVisuals(plate)
+  end
+end
+
+function BNP:RefreshNameplateLevelVisibility()
+  local plate
+  for plate in pairs(BNP.plates or {}) do
+    if plate then
+      ApplyLevelVisibility(plate)
+      if BNP.RefreshAuraLayoutForPlate then BNP:RefreshAuraLayoutForPlate(plate) end
+      if BNP.RefreshImmunityLayoutForPlate then BNP:RefreshImmunityLayoutForPlate(plate) end
+    end
   end
 end
 
@@ -141,5 +187,21 @@ if BNP.libnameplate then
 
   table.insert(BNP.libnameplate.OnShow, function(plate)
     BNP:RepairNativeNameplateVisuals(plate or this)
+  end)
+
+  -- libnameplate already runs this list at 10 Hz. The default path returns
+  -- immediately; only enabled hide options need to enforce native visibility
+  -- against Blizzard recycling/show calls.
+  table.insert(BNP.libnameplate.OnUpdate, function(plate)
+    local current = plate or this
+    if not current or not current.IsShown or not current:IsShown() then return end
+
+    local hideBorder = BNP_DB and BNP_DB.hideNameplateBorder
+    local hideLevel = BNP_DB and BNP_DB.hideNameplateLevel
+    if not hideBorder and not hideLevel and not current.BNPBorderHidden and not current.BNPLevelHidden then
+      return
+    end
+
+    ApplyOptionalNativeVisibility(current)
   end)
 end
