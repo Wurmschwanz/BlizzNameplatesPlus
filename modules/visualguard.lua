@@ -160,6 +160,12 @@ function BNP:RefreshNameplateBorderStyle()
   for plate in pairs(BNP.plates or {}) do
     self:RepairNativeNameplateVisuals(plate)
   end
+
+  -- The custom Elite / World Boss dragon is visually part of BNP's border.
+  -- Keep it in sync immediately when Hide Border is toggled.
+  if self.RefreshEliteDragonVisibility then
+    self:RefreshEliteDragonVisibility()
+  end
 end
 
 function BNP:RefreshNameplateLevelVisibility()

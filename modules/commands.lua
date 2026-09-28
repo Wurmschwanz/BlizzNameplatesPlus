@@ -120,6 +120,16 @@ local function BNP_UpdateEliteDragonPlate(plate, unit)
     return
   end
 
+  -- Hide Border also owns BNP's custom Elite / World Boss dragon.
+  -- Check it before classification so hidden borders never create/show
+  -- the extra frame, including on freshly recycled nameplates.
+  if BNP.IsNameplateBorderHidden and BNP:IsNameplateBorderHidden() then
+    if plate.BNPDirectDragonTestFrame then
+      plate.BNPDirectDragonTestFrame:Hide()
+    end
+    return
+  end
+
   local token = unit
   if not token and plate.GetName then
     token = plate:GetName(1)
@@ -144,31 +154,38 @@ local function BNP_RunEliteAutoScan()
   local elite = 0
   local shown = 0
   local lastClass = "nil"
+  local hideDragon = BNP.IsNameplateBorderHidden and BNP:IsNameplateBorderHidden()
 
   local plate
   for plate in pairs(BNP.plates or {}) do
     if plate and plate:IsShown() then
       visible = visible + 1
 
-      local classification = nil
-      local token = nil
-      if plate.GetName then
-        token = plate:GetName(1)
-      end
-      if token and UnitClassification then
-        classification = UnitClassification(token)
-      end
-      lastClass = tostring(classification or "nil")
-
-      if classification == "elite" or classification == "worldboss" then
-        elite = elite + 1
-        local dragon = BNP_GetOrCreateAutoDragon(plate)
-        if dragon then
-          dragon:Show()
-          shown = shown + 1
+      if hideDragon then
+        if plate.BNPDirectDragonTestFrame then
+          plate.BNPDirectDragonTestFrame:Hide()
         end
-      elseif plate.BNPDirectDragonTestFrame then
-        plate.BNPDirectDragonTestFrame:Hide()
+      else
+        local classification = nil
+        local token = nil
+        if plate.GetName then
+          token = plate:GetName(1)
+        end
+        if token and UnitClassification then
+          classification = UnitClassification(token)
+        end
+        lastClass = tostring(classification or "nil")
+
+        if classification == "elite" or classification == "worldboss" then
+          elite = elite + 1
+          local dragon = BNP_GetOrCreateAutoDragon(plate)
+          if dragon then
+            dragon:Show()
+            shown = shown + 1
+          end
+        elseif plate.BNPDirectDragonTestFrame then
+          plate.BNPDirectDragonTestFrame:Hide()
+        end
       end
     elseif plate and plate.BNPDirectDragonTestFrame then
       plate.BNPDirectDragonTestFrame:Hide()
@@ -179,6 +196,11 @@ local function BNP_RunEliteAutoScan()
   BNP_EliteAutoState.elite = elite
   BNP_EliteAutoState.shown = shown
   BNP_EliteAutoState.lastClass = lastClass
+end
+
+function BNP:RefreshEliteDragonVisibility()
+  BNP_EliteAutoNextScan = 0
+  BNP_RunEliteAutoScan()
 end
 
 -- Instant path ---------------------------------------------------------------

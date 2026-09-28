@@ -377,24 +377,24 @@ local function UpdateIndicator(plate, force)
     return
   end
 
-  -- Hard safety guard: player and player-controlled pet plates can never be
-  -- shaman totems. Pets are not UnitIsPlayer(), so check UnitPlayerControlled
-  -- as well before doing any name-based totem replacement.
+  -- Resolve the name first. Real Shaman totems can report as
+  -- UnitPlayerControlled() through SuperWoW/ClassicAPI, so using that flag as
+  -- a hard rejection incorrectly hides valid totems (notably Tremor Totem).
+  -- The totem-name whitelist/fallback is already a much stronger identity
+  -- check. Only actual player characters are rejected unconditionally.
   local token = plate.GetName and plate:GetName(1) or nil
-  if token and ((UnitIsPlayer and UnitIsPlayer(token))
-    or (UnitPlayerControlled and UnitPlayerControlled(token))) then
-    if indicator then indicator:Hide() end
-    RestoreTotemPlateVisuals(plate)
-    plate.BNPTotemLastName = name
-    plate.BNPTotemLastKey = nil
-    return
-  end
 
   plate.BNPTotemLastName = name
   plate.BNPTotemLastKey = nil
 
   local def = FindTotemDefinition(name)
   if not def then
+    if indicator then indicator:Hide() end
+    RestoreTotemPlateVisuals(plate)
+    return
+  end
+
+  if token and UnitIsPlayer and UnitIsPlayer(token) then
     if indicator then indicator:Hide() end
     RestoreTotemPlateVisuals(plate)
     return
