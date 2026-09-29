@@ -2,7 +2,7 @@
 
 **Blizz Nameplates+** enhances the original Blizzard nameplates for **Vanilla WoW / WoW 1.12** while preserving their classic look and feel.
 
-It adds multi-target aura tracking, Crowd Control, PvP immunities, castbars, Combo Points, totem indicators and extensive customization without replacing the original Blizzard nameplate system.
+It adds reliable multi-target aura tracking, Crowd Control, PvP immunities, castbars, Combo Points, quest indicators, totem icons, Raid Marks and extensive customization — without replacing the original Blizzard nameplate system.
 
 **Current version:** `v1.1.0`  
 **Required:** `SuperWoW.dll` + `ClassicAPI.dll`
@@ -13,37 +13,28 @@ It adds multi-target aura tracking, Crowd Control, PvP immunities, castbars, Com
 
 ### 🎯 Nameplates
 
-- Adjustable **Nameplate Scale** and **Y Offset**
-- Adjustable **Non-Target Alpha**
+- Adjustable **Scale**, **Y Offset** and **Non-Target Alpha**
 - Enemy **Class Colors**
-- **Tank Mode**
-  - Green = Aggro
-  - Red = No Aggro
-- **Invert Tank Colors**
-  - Custom Aggro / No Aggro colors
-  - Full color picker + Reset
-- Optional **Hide Player Names**
-- Optional **Hide NPC Names**
-- Optional **Hide Level**
-- Optional **Hide Border**
+- **Tank Mode** with custom Aggro / No Aggro colors
+- Optional **Hide Player Names**, **NPC Names**, **Level** and **Border**
 - Optional **Dark Border**
-- Adjustable **Name Font Size** and **Y Offset**
+- Adjustable Name font size / position
 - **Black Health Background**
 - Neutral grey healthbar for foreign-tagged mobs
-- Improved Blizzard nameplate detection and recycling
+- Improved nameplate detection and recycling
 
 ---
 
-### 🎯 Target Highlighting
+### 🎯 Target
 
 - Customizable **Target Glow**
 - Customizable **Target Arrows**
-- One shared **Target Color** for Glow + Arrows
-- Full color picker with Reset
-- Adjustable Glow size and opacity
-- Multiple Arrow styles
-- Adjustable Arrow size
-- Thick / thin Arrow variants
+- Shared **Glow / Arrow Color**
+- Adjustable Glow scale and opacity
+- Multiple Arrow styles and sizes
+- Custom **Target Border Color**
+- Optional **Bold Target Border**
+- Adjustable **Target Scale**
 - **Target Plate on Top**
 
 ---
@@ -52,192 +43,157 @@ It adds multi-target aura tracking, Crowd Control, PvP immunities, castbars, Com
 
 Display health directly on the nameplate:
 
-- Off
-- Percent
-- HP
-- HP + Percent
-- Adjustable font size
-- Outline / Thick Outline / None
+**Off • Percent • HP • HP + Percent**
+
+Includes adjustable font size and outline options.
 
 ---
 
 ### ☠️ Debuffs & DoTs
 
 - GUID-based **multi-target tracking**
-- Tracks your debuffs across multiple visible nameplates
-- Numeric timers
-- Stack counters
+- Numeric timers and stack counters
 - Optional smooth **Cooldown Spiral**
-- Independent **Aura Font Size**
-- Adjustable icon size
-- Independent Y Offset
-- Multiple positioning options
-- Spell-specific durations
-- Improved projectile, resist and miss handling
-- Reliable cleanup on dispels, deaths and invalid aura states
-
-Supported positions:
-
-- Top Mid
-- Top Left
-- Top Right
-- Left
-- Right
-- Bottom Mid
-- Bottom Left
-- Bottom Right
+- Independent Aura font and icon size
+- Multiple positioning options + Y Offset
+- Improved miss, resist and projectile handling
+- Reliable cleanup on dispels, deaths and invalid states
 
 ---
 
 ### 🌀 Crowd Control
 
 - Dedicated CC tracking
-- Optional supported CC effects from other players
-- Separate CC icon size
-- Independent Y Offset
+- Optional CCs from other players
+- Independent icon size and position
 - Optional separate CC row
-- Improved pet nameplate handling
-- Automatic cleanup of invalid CC states
-
-Positions:
-
-- Top
-- Left
-- Right
+- Improved pet-nameplate handling
+- Event-driven ClassicAPI tracking
+- Fixed CC flickering / temporary disappearing
 
 ---
 
 ### 🛡️ PvP Immunities
 
-Tracks important protection and immunity effects such as:
+Tracks important effects such as:
 
-- Divine Shield
-- Divine Protection
-- Blessing of Protection
-- Ice Block
-- Berserker Rage
-- Death Wish
-- Recklessness
-- Fear Ward
-- Will of the Forsaken
+**Divine Shield, Divine Protection, Blessing of Protection, Ice Block, Berserker Rage, Death Wish, Recklessness, Fear Ward and Will of the Forsaken**
 
-Includes independent icon size, position and Y Offset.
+Includes independent size and positioning.
 
 ---
 
-### 🔥 Totem Indicators
+### 🗿 Totem Indicators
 
-Shaman totems can be displayed as clean spell icons instead of full nameplates.
-
-- Automatic totem detection
+- Automatic Shaman totem detection
 - Ranked totem support
+- Displays clean spell icons instead of full nameplates
 - Adjustable icon size
-- Removes unnecessary name, level and healthbar clutter
-- Designed for clearer PvP situations
+
+---
+
+### 📜 Quest Indicators
+
+**QuestPlatesOcto functionality is now integrated directly into BNP.**
+
+- Quest mob and item indicators
+- Remaining objective count
+- Adjustable **Icon Size**
+- Adjustable **X / Y Offset**
+- Supports **Questie-Octo** and **pfQuest**
+
+No separate QuestPlatesOcto addon is required.
+
+---
+
+### 🔷 Raid Marks
+
+- Displays Raid Mark icons directly on nameplates
+- Adjustable **X / Y Offset**
+- Integrated into the BNP Icons settings
 
 ---
 
 ### ✨ Combo Points
 
-Available for **Rogue** and **Druid** only.
+For **Rogue** and **Druid**:
 
-- Combo Points displayed above the target nameplate
+- Combo Points above the target nameplate
 - Adjustable Y Offset
-- Optional **Dark Combo Point Border**
-- Previous target Combo Points can remain visible until new points are generated
+- Optional Dark Combo Point Border
+- Previous-target point retention
 
 ---
 
 ### 🔥 Castbars
 
-- Enemy castbars
-- Spell icons
+- Enemy castbars with spell icons
 - Classic / modern styling
-- Adjustable height
-- Adjustable spacing
-- Adjustable X / Y Offset
-- Castbar test mode
-- Improved enemy cast detection through ClassicAPI
+- Adjustable height, spacing and X / Y Offset
 - Interruptibility support
+- ClassicAPI-based enemy cast detection
 - Automatic positioning around bottom auras
-- Clean Target Glow / castbar layering
-- Successful casts receive a visual completion effect
+- Successful-cast completion effect
 
 ---
 
 ## ⚡ Performance & Compatibility
 
-Blizz Nameplates+ keeps the original Blizzard nameplates and builds functionality around them instead of replacing the entire system.
-
-v1.1.0 includes major ClassicAPI-based improvements:
+v1.1.0 includes major **ClassicAPI** improvements:
 
 - More reliable nameplate-to-unit resolution
-- Improved aura updates
-- More efficient enemy castbar handling
+- Event-driven aura updates
+- Improved multi-target accuracy
+- More efficient cast handling
 - Reduced unnecessary scanning
-- Improved recycled nameplate handling
-- Better multi-target accuracy
-- Improved compatibility with UI addons modifying Blizzard nameplates
-- Mouseover tooltip support
-- Mouseover macro support
+- Better recycled-nameplate handling
+- Mouseover tooltip and macro support
+- Improved compatibility with UI addons
 - Settings stored **per character**
 
 ---
 
 ## 🆕 v1.1.0 Highlights
 
-- Major **ClassicAPI integration improvements**
-- Smoother optional **Cooldown Spirals**
+- Major ClassicAPI integration
+- Integrated **Quest Indicators**
+- New **Target Border Color**
+- Optional **Bold Target Border**
+- Improved **Raid Marks** with X / Y positioning
+- Fixed CC flickering
+- Cooldown Spirals
 - Independent Aura Font Size
-- Improved CC and pet-nameplate handling
-- Improved miss / resist detection
-- Fixed false Rake applications after misses
-- Hide Level option
-- Hide Border option
-- Custom colors for **Invert Tank Mode**
-- Shared custom color for **Target Glow + Target Arrows**
-- Improved and reorganized options menu
-- Color picker with Reset and movable window
-- Additional performance and nameplate recycling fixes
+- Custom Tank Mode colors
+- Improved miss / resist handling
+- Hide Level / Hide Border options
+- Reorganized and cleaner options menu
+- Additional performance and recycling fixes
 
 ---
 
 ## 🔎 Missing Spell / Aura Recorder
 
-Missing a spell, DoT, proc or custom-server aura?
-
 Open:
 
 **BNP Settings → Tools → Missing Spell / Aura**
 
-The recorder can collect:
-
-- Spell IDs
-- Aura durations
-- Expiration times
-- Refresh events
-- Target information
-- Aura state changes
-
-The recorder is inactive until **Start Recording** is pressed.
+The recorder can collect Spell IDs, durations, expiration times, refresh events, target information and aura state changes.
 
 ---
 
 ## 📦 Requirements
 
 ### SuperWoW.dll
-
-Used for GUID, combat, cast and unit information.
+Provides GUID, combat, cast and unit information.
 
 [Download SuperWoW](https://github.com/balakethelock/SuperWoW)
 
 ### ClassicAPI.dll
-
-Used for reliable nameplate, aura and spell information.
+Provides reliable nameplate, aura and spell information.
 
 [Download ClassicAPI](https://github.com/brues-code/ClassicAPI)
 
-> **Both DLLs are required. Keep them up to date.**
+> **Both DLLs are required and should be kept up to date.**
 
 ---
 
@@ -249,7 +205,7 @@ Used for reliable nameplate, aura and spell information.
 
 `Interface\AddOns\`
 
-The final path should be:
+Final path:
 
 `Interface\AddOns\BlizzNameplatesPlus\BlizzNameplatesPlus.toc`
 
