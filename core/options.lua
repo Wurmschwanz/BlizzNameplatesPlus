@@ -167,7 +167,7 @@ local function PrepareBNPColorPicker()
     reset:SetScript("OnEnter", function()
       GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
       GameTooltip:SetText("Reset Color", 1, 0.82, 0)
-      GameTooltip:AddLine("Restores BNP's default color for this Invert Tank state.", 1, 1, 1, true)
+      GameTooltip:AddLine(ColorPickerFrame.BNPResetTooltip or "Restores BNP's default color for this Invert Tank state.", 1, 1, 1, true)
       GameTooltip:Show()
     end)
     reset:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -179,7 +179,7 @@ local function PrepareBNPColorPicker()
   BNPColorPickerResetButton:SetPoint("BOTTOM", ColorPickerFrame, "BOTTOM", 0, 12)
 end
 
-local function CreateColorSwatch(parent, label, y, x, getColor, setColor, defaultR, defaultG, defaultB)
+local function CreateColorSwatch(parent, label, y, x, getColor, setColor, defaultR, defaultG, defaultB, tooltipLine, resetTooltip)
   local text = parent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   text:SetPoint("TOPLEFT", parent, "TOPLEFT", x or 22, y - 2)
   text:SetText(label)
@@ -223,6 +223,7 @@ local function CreateColorSwatch(parent, label, y, x, getColor, setColor, defaul
     ColorPickerFrame.BNPResetB = defaultB
     ColorPickerFrame.BNPActiveColorSetter = setColor
     ColorPickerFrame.BNPActiveColorSwatch = swatch
+    ColorPickerFrame.BNPResetTooltip = resetTooltip
     ColorPickerFrame.func = nil
     ColorPickerFrame.opacityFunc = nil
     ColorPickerFrame.cancelFunc = nil
@@ -250,7 +251,7 @@ local function CreateColorSwatch(parent, label, y, x, getColor, setColor, defaul
   swatch:SetScript("OnEnter", function()
     GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
     GameTooltip:SetText(label, 1, 0.82, 0)
-    GameTooltip:AddLine("Click the color box to choose the color used while Invert Tank Colors is enabled.", 1, 1, 1, true)
+    GameTooltip:AddLine(tooltipLine or "Click the color box to choose the color used while Invert Tank Colors is enabled.", 1, 1, 1, true)
     GameTooltip:AddLine("The color picker opens above this menu and can be dragged from any free background area.", 0.8, 0.8, 0.8, true)
     GameTooltip:Show()
   end)
@@ -609,9 +610,11 @@ function BNP:CreateOptions()
 
   local frame = CreateFrame("Frame", "BNPOptionsFrame", UIParent)
   frame:SetWidth(430)
-  frame:SetHeight(590)
-  -- Keep the top edge in the same place and add the extra room downward.
-  frame:SetPoint("CENTER", UIParent, "CENTER", 0, 20)
+  frame:SetHeight(710)
+  -- Keep the top edge in roughly the same place and add the extra room
+  -- downward. The Icons page uses the height for Totems, Raid Marks and
+  -- Quest Indicators without crowding or clipping.
+  frame:SetPoint("CENTER", UIParent, "CENTER", 0, -40)
   frame:SetFrameStrata("DIALOG")
   frame:SetBackdrop({
     bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
@@ -673,8 +676,8 @@ function BNP:CreateOptions()
     end
   end
 
-  -- Compact tab navigation. Totems stays separate from aura tracking so PvP
-  -- nameplate indicators never touch the debuff/CC state machine.
+  -- Compact tab navigation. The Icons page groups visual indicators that sit
+  -- on nameplates but do not belong to the debuff/CC state machine.
   frame.pages = {
     nameplates = CreatePage(),
     auras = CreatePage(),
@@ -688,7 +691,7 @@ function BNP:CreateOptions()
   local tabDefs = {
     { key = "nameplates", label = "Nameplates", width = 76 },
     { key = "auras", label = "Auras", width = 52 },
-    { key = "totems", label = "Totems", width = 58 },
+    { key = "totems", label = "Icons", width = 58 },
     { key = "castbar", label = "Castbar", width = 60 },
     { key = "target", label = "Target", width = 56 },
     { key = "tools", label = "Tools", width = 50 },
@@ -878,9 +881,38 @@ function BNP:CreateOptions()
   hideNameplateLevel:SetScript("OnLeave", function() GameTooltip:Hide() end)
   frame.hideNameplateLevelCheck = hideNameplateLevel
 
+  local customNameColor = CreateCheck(nameplatesPage, "Custom Name Color", -250, function()
+    BNP_DB.customNameColor = this:GetChecked() and true or false
+    if BNP.RefreshNameAppearance then BNP:RefreshNameAppearance() end
+    if frame.UpdateDependentControls then frame:UpdateDependentControls() end
+  end, 214)
+  customNameColor:SetScript("OnEnter", function()
+    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+    GameTooltip:SetText("Custom Name Color", 1, 0.82, 0)
+    GameTooltip:AddLine("Keeps nameplate names in one fixed color instead of allowing the client to recolor them, for example to red during combat.", 1, 1, 1, true)
+    GameTooltip:Show()
+  end)
+  customNameColor:SetScript("OnLeave", function() GameTooltip:Hide() end)
+  frame.customNameColorCheck = customNameColor
+
+  local nameColorSwatch, nameColorLabel = CreateColorSwatch(nameplatesPage, "Name Color", -276, 214,
+    function() return BNP:GetNameColor() end,
+    function(r, g, b) BNP:SetNameColor(r, g, b) end,
+    1.00, 1.00, 1.00,
+    "Choose the fixed color used for nameplate names while Custom Name Color is enabled.",
+    "Restores the custom name color to white.")
+  nameColorSwatch:SetScript("OnEnter", function()
+    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+    GameTooltip:SetText("Name Color", 1, 0.82, 0)
+    GameTooltip:AddLine("Choose the fixed color used for nameplate names while Custom Name Color is enabled.", 1, 1, 1, true)
+    GameTooltip:Show()
+  end)
+  nameColorSwatch:SetScript("OnLeave", function() GameTooltip:Hide() end)
+  frame.nameColorSwatch = nameColorSwatch
+
   -- Name text controls are independent from Nameplate Scale. The size setting
   -- only touches the Blizzard name FontString; the Y offset only moves it.
-  local nameFontSize = CreateSlider(nameplatesPage, "Name Font Size", 8, 24, 1, -280, 28, 150)
+  local nameFontSize = CreateSlider(nameplatesPage, "Name Font Size", 8, 24, 1, -306, 28, 150)
   nameFontSize:SetScript("OnValueChanged", function()
     if not BNP_DB or frame.BNPSyncingNameControls then return end
     local value = math.floor(this:GetValue() + 0.5)
@@ -890,7 +922,7 @@ function BNP:CreateOptions()
   end)
   frame.nameFontSizeSlider = nameFontSize
 
-  local nameFontYOffset = CreateSlider(nameplatesPage, "Name Y Offset", -50, 50, 1, -280, 220, 150)
+  local nameFontYOffset = CreateSlider(nameplatesPage, "Name Y Offset", -50, 50, 1, -306, 220, 150)
   nameFontYOffset:SetScript("OnValueChanged", function()
     if not BNP_DB or frame.BNPSyncingNameControls then return end
     local value = RoundSignedInteger(this:GetValue())
@@ -901,14 +933,14 @@ function BNP:CreateOptions()
   frame.nameFontYOffsetSlider = nameFontYOffset
 
   -- HEALTH BAR & TEXT -----------------------------------------------------
-  CreateSection(nameplatesPage, "Health Bar & Text", -310)
+  CreateSection(nameplatesPage, "Health Bar & Text", -336)
 
   local healthTextLabel = nameplatesPage:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-  healthTextLabel:SetPoint("TOPLEFT", nameplatesPage, "TOPLEFT", 28, -332)
+  healthTextLabel:SetPoint("TOPLEFT", nameplatesPage, "TOPLEFT", 28, -358)
   healthTextLabel:SetText("Display")
 
   local healthTextDropdown = CreateFrame("Frame", "BNPHealthTextDropdown", nameplatesPage, "UIDropDownMenuTemplate")
-  healthTextDropdown:SetPoint("TOPLEFT", nameplatesPage, "TOPLEFT", 10, -344)
+  healthTextDropdown:SetPoint("TOPLEFT", nameplatesPage, "TOPLEFT", 10, -370)
   UIDropDownMenu_SetWidth(150, healthTextDropdown)
 
   local healthModeLabels = {
@@ -944,11 +976,11 @@ function BNP:CreateOptions()
   frame.SetHealthTextMode = SetHealthTextMode
 
   local healthOutlineLabel = nameplatesPage:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-  healthOutlineLabel:SetPoint("TOPLEFT", nameplatesPage, "TOPLEFT", 220, -332)
+  healthOutlineLabel:SetPoint("TOPLEFT", nameplatesPage, "TOPLEFT", 220, -358)
   healthOutlineLabel:SetText("Outline")
 
   local healthOutlineDropdown = CreateFrame("Frame", "BNPHealthOutlineDropdown", nameplatesPage, "UIDropDownMenuTemplate")
-  healthOutlineDropdown:SetPoint("TOPLEFT", nameplatesPage, "TOPLEFT", 200, -344)
+  healthOutlineDropdown:SetPoint("TOPLEFT", nameplatesPage, "TOPLEFT", 200, -370)
   UIDropDownMenu_SetWidth(150, healthOutlineDropdown)
 
   local healthOutlineLabels = {
@@ -981,7 +1013,7 @@ function BNP:CreateOptions()
   frame.healthTextOutlineDropdown = healthOutlineDropdown
   frame.SetHealthTextOutline = SetHealthTextOutline
 
-  local healthFontSize = CreateSlider(nameplatesPage, "Health Font Size", 8, 20, 1, -390, 28, 150)
+  local healthFontSize = CreateSlider(nameplatesPage, "Health Font Size", 8, 20, 1, -416, 28, 150)
   healthFontSize:SetScript("OnValueChanged", function()
     if not BNP_DB or frame.BNPSyncingHealthTextControls then return end
     local value = math.floor(this:GetValue() + 0.5)
@@ -991,7 +1023,7 @@ function BNP:CreateOptions()
   end)
   frame.healthTextFontSizeSlider = healthFontSize
 
-  local blackHealthbarBackground = CreateCheck(nameplatesPage, "Black Health Background", -386, function()
+  local blackHealthbarBackground = CreateCheck(nameplatesPage, "Black Health Background", -412, function()
     BNP_DB.blackHealthbarBackground = this:GetChecked() and true or false
     if BNP.RefreshHealthbarBackground then BNP:RefreshHealthbarBackground() end
   end, 214)
@@ -1006,9 +1038,9 @@ function BNP:CreateOptions()
 
   -- COMBO POINTS (Rogue / Druid only) ------------------------------------
   if comboOptionsClass then
-    CreateSection(nameplatesPage, "Combo Points", -416)
+    CreateSection(nameplatesPage, "Combo Points", -442)
 
-    local comboPoints = CreateCheck(nameplatesPage, "Combo Points", -440, function()
+    local comboPoints = CreateCheck(nameplatesPage, "Combo Points", -466, function()
       BNP_DB.comboPoints = this:GetChecked() and true or false
       if BNP.RefreshComboPoints then BNP:RefreshComboPoints() end
       if BNP.RefreshAllAuraLayouts then BNP:RefreshAllAuraLayouts() end
@@ -1017,7 +1049,7 @@ function BNP:CreateOptions()
     end, 22)
     frame.comboPointsCheck = comboPoints
 
-    local darkComboPointBorder = CreateCheck(nameplatesPage, "Dark CP Border", -440, function()
+    local darkComboPointBorder = CreateCheck(nameplatesPage, "Dark CP Border", -466, function()
       BNP_DB.darkComboPointBorder = this:GetChecked() and true or false
       if BNP.RefreshComboPointBorderStyle then BNP:RefreshComboPointBorderStyle() end
       if BNP.RefreshComboPoints then BNP:RefreshComboPoints() end
@@ -1032,7 +1064,7 @@ function BNP:CreateOptions()
     darkComboPointBorder:SetScript("OnLeave", function() GameTooltip:Hide() end)
     frame.darkComboPointBorderCheck = darkComboPointBorder
 
-    local comboYOffset = CreateSlider(nameplatesPage, "Combo Point Y Offset", -50, 50, 1, -440, 278, 105)
+    local comboYOffset = CreateSlider(nameplatesPage, "Combo Point Y Offset", -50, 50, 1, -466, 278, 105)
     comboYOffset:SetScript("OnValueChanged", function()
       if not BNP_DB then return end
       local value = RoundSignedInteger(this:GetValue())
@@ -1310,18 +1342,20 @@ function BNP:CreateOptions()
   end)
   frame.immunityYOffsetSlider = immunityYOffset
 
-  -- TOTEMS TAB -------------------------------------------------------------
+  -- ICONS TAB --------------------------------------------------------------
   local totemsPage = frame.pages.totems
+
+  -- Totem indicators
   CreateSection(totemsPage, "Totem Indicators", -4)
 
-  local totemIndicators = CreateCheck(totemsPage, "Enable Totem Icons", -42, function()
+  local totemIndicators = CreateCheck(totemsPage, "Enable Totem Icons", -36, function()
     BNP_DB.totemIndicators = this:GetChecked() and true or false
     if BNP.RefreshTotemIndicators then BNP:RefreshTotemIndicators() end
     if frame.UpdateDependentControls then frame:UpdateDependentControls() end
   end)
   frame.totemIndicatorsCheck = totemIndicators
 
-  local totemIcon = CreateSlider(totemsPage, "Totem Icon Size", 16, 36, 1, -92)
+  local totemIcon = CreateSlider(totemsPage, "Totem Icon Size", 16, 36, 1, -82)
   totemIcon:SetScript("OnValueChanged", function()
     if not BNP_DB then return end
     local value = math.floor(this:GetValue() + 0.5)
@@ -1332,10 +1366,128 @@ function BNP:CreateOptions()
   frame.totemIconSlider = totemIcon
 
   local totemNote = totemsPage:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-  totemNote:SetPoint("TOPLEFT", totemsPage, "TOPLEFT", 28, -150)
-  totemNote:SetWidth(340)
+  totemNote:SetPoint("TOPLEFT", totemsPage, "TOPLEFT", 28, -132)
+  totemNote:SetWidth(350)
   totemNote:SetJustifyH("LEFT")
-  totemNote:SetText("Replaces all visible shaman totem nameplates with compact icons. There are no individual totem filters.")
+  totemNote:SetText("Replaces visible shaman totem nameplates with compact icons.")
+
+  -- Raid marks
+  CreateSection(totemsPage, "Raid Marks", -176)
+
+  local raidMarkPositionLabel = totemsPage:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  raidMarkPositionLabel:SetPoint("TOPLEFT", totemsPage, "TOPLEFT", 28, -202)
+  raidMarkPositionLabel:SetText("Raid Mark Position")
+  frame.raidMarkPositionLabel = raidMarkPositionLabel
+
+  local raidMarkPositionDropdown = CreateFrame("Frame", "BNPRaidMarkPositionDropdown", totemsPage, "UIDropDownMenuTemplate")
+  raidMarkPositionDropdown:SetPoint("TOPLEFT", totemsPage, "TOPLEFT", 10, -214)
+  UIDropDownMenu_SetWidth(150, raidMarkPositionDropdown)
+
+  local raidMarkPositionLabels = {
+    top = "Top",
+    left = "Left",
+    right = "Right",
+  }
+
+  local function SetRaidMarkPosition(position)
+    if not raidMarkPositionLabels[position] then position = "top" end
+    BNP_DB.raidMarkPosition = position
+    UIDropDownMenu_SetSelectedValue(raidMarkPositionDropdown, position)
+    UIDropDownMenu_SetText(raidMarkPositionLabels[position], raidMarkPositionDropdown)
+    if BNP.RefreshRaidMarkPositions then BNP:RefreshRaidMarkPositions() end
+  end
+
+  UIDropDownMenu_Initialize(raidMarkPositionDropdown, function()
+    local positions = { "top", "left", "right" }
+    local n
+    for n = 1, table.getn(positions) do
+      local position = positions[n]
+      local info = {}
+      info.text = raidMarkPositionLabels[position]
+      info.value = position
+      info.func = function() SetRaidMarkPosition(this.value) end
+      info.checked = (BNP:GetRaidMarkPosition() == position)
+      UIDropDownMenu_AddButton(info)
+    end
+  end)
+  frame.raidMarkPositionDropdown = raidMarkPositionDropdown
+  frame.SetRaidMarkPosition = SetRaidMarkPosition
+
+  local raidMarkXOffset = CreateSlider(totemsPage, "Raid Mark X Offset: 0", -50, 50, 1, -270, 28, 150)
+  raidMarkXOffset:SetScript("OnValueChanged", function()
+    if not BNP_DB or frame.BNPSyncingRaidMarkControls then return end
+    local value = RoundSignedInteger(this:GetValue())
+    BNP_DB.raidMarkXOffset = value
+    getglobal(this:GetName() .. "Text"):SetText("Raid Mark X Offset: " .. (value > 0 and "+" or "") .. value)
+    if BNP.RefreshRaidMarkPositions then BNP:RefreshRaidMarkPositions() end
+  end)
+  frame.raidMarkXOffsetSlider = raidMarkXOffset
+
+  local raidMarkYOffset = CreateSlider(totemsPage, "Raid Mark Y Offset: 0", -50, 50, 1, -270, 220, 150)
+  raidMarkYOffset:SetScript("OnValueChanged", function()
+    if not BNP_DB or frame.BNPSyncingRaidMarkControls then return end
+    local value = RoundSignedInteger(this:GetValue())
+    BNP_DB.raidMarkYOffset = value
+    getglobal(this:GetName() .. "Text"):SetText("Raid Mark Y Offset: " .. (value > 0 and "+" or "") .. value)
+    if BNP.RefreshRaidMarkPositions then BNP:RefreshRaidMarkPositions() end
+  end)
+  frame.raidMarkYOffsetSlider = raidMarkYOffset
+
+  -- Quest indicators
+  CreateSection(totemsPage, "Quest Indicators", -334)
+
+  local questPlateIndicators = CreateCheck(totemsPage, "Enable Quest Icons", -368, function()
+    BNP_DB.questPlateIndicators = this:GetChecked() and true or false
+    if BNP.RequestQuestPlateObjectiveUpdate and BNP_DB.questPlateIndicators then
+      BNP:RequestQuestPlateObjectiveUpdate()
+    end
+    if BNP.RefreshQuestPlateIndicators then BNP:RefreshQuestPlateIndicators() end
+    if frame.UpdateDependentControls then frame:UpdateDependentControls() end
+  end)
+  frame.questPlateIndicatorsCheck = questPlateIndicators
+
+  local questIconSize = CreateSlider(totemsPage, "Quest Icon Size", 6, 64, 1, -416, 28, 150)
+  questIconSize:SetScript("OnValueChanged", function()
+    if not BNP_DB then return end
+    local value = math.floor(this:GetValue() + 0.5)
+    BNP_DB.questPlateIconSize = value
+    getglobal(this:GetName() .. "Text"):SetText("Quest Icon Size: " .. value)
+    if BNP.RefreshQuestPlateIndicators then BNP:RefreshQuestPlateIndicators() end
+  end)
+  frame.questPlateIconSizeSlider = questIconSize
+
+  local questXOffset = CreateSlider(totemsPage, "Quest Icon X Offset", -100, 100, 1, -482, 28, 150)
+  questXOffset:SetScript("OnValueChanged", function()
+    if not BNP_DB then return end
+    local value = RoundSignedInteger(this:GetValue())
+    BNP_DB.questPlateXOffset = value
+    getglobal(this:GetName() .. "Text"):SetText("Quest Icon X Offset: " .. (value > 0 and "+" or "") .. value)
+    if BNP.RefreshQuestPlateIndicators then BNP:RefreshQuestPlateIndicators() end
+  end)
+  frame.questPlateXOffsetSlider = questXOffset
+
+  local questYOffset = CreateSlider(totemsPage, "Quest Icon Y Offset", -100, 100, 1, -482, 220, 150)
+  questYOffset:SetScript("OnValueChanged", function()
+    if not BNP_DB then return end
+    local value = RoundSignedInteger(this:GetValue())
+    BNP_DB.questPlateYOffset = value
+    getglobal(this:GetName() .. "Text"):SetText("Quest Icon Y Offset: " .. (value > 0 and "+" or "") .. value)
+    if BNP.RefreshQuestPlateIndicators then BNP:RefreshQuestPlateIndicators() end
+  end)
+  frame.questPlateYOffsetSlider = questYOffset
+
+  local questNote = totemsPage:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  questNote:SetPoint("TOPLEFT", totemsPage, "TOPLEFT", 28, -526)
+  questNote:SetWidth(350)
+  questNote:SetJustifyH("LEFT")
+  questNote:SetText("Shows remaining kill/item quest objectives beside matching mob nameplates.")
+  frame.questPlateNote = questNote
+
+  local questStatus = totemsPage:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  questStatus:SetPoint("TOPLEFT", totemsPage, "TOPLEFT", 28, -560)
+  questStatus:SetWidth(350)
+  questStatus:SetJustifyH("LEFT")
+  frame.questPlateStatus = questStatus
 
 
   -- CASTBAR TAB ------------------------------------------------------------
@@ -1473,24 +1625,38 @@ function BNP:CreateOptions()
 
   -- TARGET TAB -------------------------------------------------------------
   local targetPage = frame.pages.target
-  CreateSection(targetPage, "Target", -4)
 
-  local targetFocus = CreateCheck(targetPage, "Target Glow", -42, function()
+  -- Target highlight: glow and arrows share one color, but keep independent
+  -- enable switches and sizing controls.
+  CreateSection(targetPage, "Target Highlight", -4)
+
+  local targetFocus = CreateCheck(targetPage, "Target Glow", -38, function()
     BNP_DB.targetFocus = this:GetChecked() and true or false
     if BNP.RefreshTargetFocus then BNP:RefreshTargetFocus() end
     if frame.UpdateDependentControls then frame:UpdateDependentControls() end
   end)
   frame.targetFocusCheck = targetFocus
 
-  -- One shared free RGB color for both target indicators.
-  local targetColorSwatch, targetColorLabel = CreateColorSwatch(targetPage, "Target Color", -88, 28,
+  local targetArrows = CreateCheck(targetPage, "Target Arrows", -38, function()
+    BNP_DB.targetArrows = this:GetChecked() and true or false
+    if BNP.RefreshTargetFocus then BNP:RefreshTargetFocus() end
+    if frame.UpdateDependentControls then frame:UpdateDependentControls() end
+  end)
+  targetArrows:ClearAllPoints()
+  targetArrows:SetPoint("TOPLEFT", targetPage, "TOPLEFT", 204, -38)
+  frame.targetArrowsCheck = targetArrows
+
+  -- One shared free RGB color for glow and arrows.
+  local targetColorSwatch, targetColorLabel = CreateColorSwatch(targetPage, "Glow / Arrow Color", -86, 28,
     function() return BNP:GetTargetColor() end,
     function(r, g, b) BNP:SetTargetColor(r, g, b) end,
-    1.00, 1.00, 1.00)
+    1.00, 1.00, 1.00,
+    "Choose the shared color used by Target Glow and Target Arrows.",
+    "Restores the default BNP glow / arrow color.")
   frame.targetColorSwatch = targetColorSwatch
   frame.targetColorLabel = targetColorLabel
 
-  local glowSize = CreateSlider(targetPage, "Target Glow Size", 0, 20, 1, -168)
+  local glowSize = CreateSlider(targetPage, "Target Glow Size", 0, 20, 1, -150)
   glowSize:SetWidth(145)
   glowSize:SetScript("OnValueChanged", function()
     if not BNP_DB then return end
@@ -1501,7 +1667,7 @@ function BNP:CreateOptions()
   end)
   frame.targetGlowSizeSlider = glowSize
 
-  local glowOpacity = CreateSlider(targetPage, "Target Glow Opacity", 20, 100, 5, -222)
+  local glowOpacity = CreateSlider(targetPage, "Target Glow Opacity", 20, 100, 5, -208)
   glowOpacity:SetWidth(145)
   glowOpacity:SetScript("OnValueChanged", function()
     if not BNP_DB then return end
@@ -1512,22 +1678,13 @@ function BNP:CreateOptions()
   end)
   frame.targetGlowOpacitySlider = glowOpacity
 
-  local targetArrows = CreateCheck(targetPage, "Target Arrows", -42, function()
-    BNP_DB.targetArrows = this:GetChecked() and true or false
-    if BNP.RefreshTargetFocus then BNP:RefreshTargetFocus() end
-    if frame.UpdateDependentControls then frame:UpdateDependentControls() end
-  end)
-  targetArrows:ClearAllPoints()
-  targetArrows:SetPoint("TOPLEFT", targetPage, "TOPLEFT", 204, -42)
-  frame.targetArrowsCheck = targetArrows
-
   local arrowStyleLabel = targetPage:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-  arrowStyleLabel:SetPoint("TOPLEFT", targetPage, "TOPLEFT", 210, -142)
+  arrowStyleLabel:SetPoint("TOPLEFT", targetPage, "TOPLEFT", 210, -88)
   arrowStyleLabel:SetText("Arrow Style")
   frame.arrowStyleLabel = arrowStyleLabel
 
   local arrowStyleDropdown = CreateFrame("Frame", "BNPTargetArrowStyleDropdown", targetPage, "UIDropDownMenuTemplate")
-  arrowStyleDropdown:SetPoint("TOPLEFT", targetPage, "TOPLEFT", 192, -154)
+  arrowStyleDropdown:SetPoint("TOPLEFT", targetPage, "TOPLEFT", 192, -100)
   UIDropDownMenu_SetWidth(140, arrowStyleDropdown)
 
   local arrowStyleLabels = {
@@ -1562,9 +1719,9 @@ function BNP:CreateOptions()
   frame.arrowStyleDropdown = arrowStyleDropdown
   frame.SetTargetArrowStyle = SetTargetArrowStyle
 
-  local arrowSize = CreateSlider(targetPage, "Target Arrow Size", 10, 24, 1, -222)
+  local arrowSize = CreateSlider(targetPage, "Target Arrow Size", 10, 24, 1, -166)
   arrowSize:ClearAllPoints()
-  arrowSize:SetPoint("TOPLEFT", targetPage, "TOPLEFT", 210, -222)
+  arrowSize:SetPoint("TOPLEFT", targetPage, "TOPLEFT", 210, -166)
   arrowSize:SetWidth(145)
   arrowSize:SetScript("OnValueChanged", function()
     if not BNP_DB then return end
@@ -1575,13 +1732,76 @@ function BNP:CreateOptions()
   end)
   frame.targetArrowSizeSlider = arrowSize
 
-  local thickArrows = CreateCheck(targetPage, "Thick Arrows", -276, function()
+  local thickArrows = CreateCheck(targetPage, "Thick Arrows", -220, function()
     BNP_DB.targetArrowThick = this:GetChecked() and true or false
     if BNP.RefreshTargetFocus then BNP:RefreshTargetFocus() end
   end)
   thickArrows:ClearAllPoints()
-  thickArrows:SetPoint("TOPLEFT", targetPage, "TOPLEFT", 204, -276)
+  thickArrows:SetPoint("TOPLEFT", targetPage, "TOPLEFT", 204, -220)
   frame.targetArrowThickCheck = thickArrows
+
+  -- Target border
+  CreateSection(targetPage, "Target Border", -280)
+
+  local targetBorderColor = CreateCheck(targetPage, "Target Border Color", -314, function()
+    BNP_DB.targetBorderColorEnabled = this:GetChecked() and true or false
+    if BNP.RefreshTargetBorderColor then BNP:RefreshTargetBorderColor() end
+    if frame.UpdateDependentControls then frame:UpdateDependentControls() end
+  end)
+  frame.targetBorderColorCheck = targetBorderColor
+
+  -- Keep the compact color box on the same row, slightly lower than the label
+  -- so it visually aligns with the checkbox text.
+  local targetBorderColorSwatch = CreateColorSwatch(targetPage, "", -320, 166,
+    function() return BNP:GetTargetBorderColor() end,
+    function(r, g, b) BNP:SetTargetBorderColor(r, g, b) end,
+    1.00, 0.20, 0.20,
+    "Choose the color of the native nameplate border while this unit is your target.",
+    "Restores the default BNP target border color.")
+  targetBorderColorSwatch:SetScript("OnEnter", function()
+    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+    GameTooltip:SetText("Target Border Color", 1, 0.82, 0)
+    GameTooltip:AddLine("Click the color box to choose the border color used on your current target.", 1, 1, 1, true)
+    GameTooltip:AddLine("Target Glow and Target Arrows use the separate Glow / Arrow Color above.", 0.8, 0.8, 0.8, true)
+    GameTooltip:Show()
+  end)
+  targetBorderColorSwatch:SetScript("OnLeave", function() GameTooltip:Hide() end)
+  frame.targetBorderColorSwatch = targetBorderColorSwatch
+
+  local targetBorderBold = CreateCheck(targetPage, "Bold Target Border", -346, function()
+    BNP_DB.targetBorderBold = this:GetChecked() and true or false
+    if BNP.RefreshTargetBorderColor then BNP:RefreshTargetBorderColor() end
+  end)
+  targetBorderBold:SetScript("OnEnter", function()
+    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+    GameTooltip:SetText("Bold Target Border", 1, 0.82, 0)
+    GameTooltip:AddLine("Uses a thicker version of the same target border. No second frame is added.", 1, 1, 1, true)
+    GameTooltip:Show()
+  end)
+  targetBorderBold:SetScript("OnLeave", function() GameTooltip:Hide() end)
+  frame.targetBorderBoldCheck = targetBorderBold
+
+  -- Target scale
+  CreateSection(targetPage, "Target Scale", -398)
+
+  local targetScaleEnabled = CreateCheck(targetPage, "Enable Target Scale", -432, function()
+    BNP_DB.targetScaleEnabled = this:GetChecked() and true or false
+    if BNP.RefreshTargetScale then BNP:RefreshTargetScale() end
+    if frame.UpdateDependentControls then frame:UpdateDependentControls() end
+  end)
+  frame.targetScaleEnabledCheck = targetScaleEnabled
+
+  local targetScale = CreateSlider(targetPage, "Target Scale: 1.20x", 1.00, 1.50, 0.05, -478, 28, 220)
+  targetScale:SetScript("OnValueChanged", function()
+    if not BNP_DB then return end
+    local value = Round(this:GetValue(), 0.05)
+    if value < 1.00 then value = 1.00 end
+    if value > 1.50 then value = 1.50 end
+    BNP_DB.targetScale = value
+    getglobal(this:GetName() .. "Text"):SetText(string.format("Target Scale: %.2fx", value))
+    if BNP.RefreshTargetScale then BNP:RefreshTargetScale() end
+  end)
+  frame.targetScaleSlider = targetScale
 
   -- TOOLS TAB --------------------------------------------------------------
   local toolsPage = frame.pages.tools
@@ -1653,6 +1873,15 @@ function BNP:CreateOptions()
     SetTankSwatchEnabled(self.invertAggroColorSwatch, invertTankEnabled)
     SetTankSwatchEnabled(self.invertNoAggroColorSwatch, invertTankEnabled)
 
+    local nameColorEnabled = BNP.IsCustomNameColorEnabled and BNP:IsCustomNameColorEnabled() or false
+    if self.nameColorSwatch then
+      self.nameColorSwatch:SetAlpha(nameColorEnabled and 1.0 or 0.45)
+      if self.nameColorSwatch.EnableMouse then self.nameColorSwatch:EnableMouse(nameColorEnabled) end
+      if self.nameColorSwatch.BNPLabel then
+        self.nameColorSwatch.BNPLabel:SetTextColor(nameColorEnabled and 1 or 0.5, nameColorEnabled and 0.82 or 0.5, nameColorEnabled and 0 or 0.5)
+      end
+    end
+
     local immunitiesEnabled = BNP.ArePvPImmunitiesEnabled and BNP:ArePvPImmunitiesEnabled() or false
     if self.immunityIconSlider then
       self.immunityIconSlider:SetAlpha(immunitiesEnabled and 1.0 or 0.45)
@@ -1680,6 +1909,27 @@ function BNP:CreateOptions()
       if self.totemIconSlider.EnableMouse then self.totemIconSlider:EnableMouse(totemsEnabled) end
     end
 
+    local questEnabled = BNP.AreQuestPlateIndicatorsEnabled and BNP:AreQuestPlateIndicatorsEnabled() or false
+    local questSliders = { self.questPlateIconSizeSlider, self.questPlateXOffsetSlider, self.questPlateYOffsetSlider }
+    local questIndex
+    for questIndex = 1, table.getn(questSliders) do
+      local slider = questSliders[questIndex]
+      if slider then
+        slider:SetAlpha(questEnabled and 1.0 or 0.45)
+        if slider.EnableMouse then slider:EnableMouse(questEnabled) end
+      end
+    end
+    if self.questPlateStatus then
+      local dependency = BNP.GetQuestPlateDependencyName and BNP:GetQuestPlateDependencyName() or nil
+      if dependency then
+        self.questPlateStatus:SetText("Database: " .. dependency .. " detected")
+        self.questPlateStatus:SetTextColor(0.35, 1.0, 0.45)
+      else
+        self.questPlateStatus:SetText("Database: Questie-Octo / pfQuest not detected")
+        self.questPlateStatus:SetTextColor(1.0, 0.35, 0.25)
+      end
+    end
+
     local glowEnabled = BNP:IsTargetFocusEnabled()
     local arrowsEnabled = BNP.AreTargetArrowsEnabled and BNP:AreTargetArrowsEnabled() or false
     local targetColorEnabled = glowEnabled or arrowsEnabled
@@ -1689,6 +1939,12 @@ function BNP:CreateOptions()
     if self.targetColorSwatch then
       self.targetColorSwatch:SetAlpha(targetColorEnabled and 1.0 or 0.45)
       if self.targetColorSwatch.EnableMouse then self.targetColorSwatch:EnableMouse(targetColorEnabled) end
+    end
+    local targetBorderEnabled = BNP.IsTargetBorderColorEnabled and BNP:IsTargetBorderColorEnabled() or false
+    SetCheckEnabled(self.targetBorderBoldCheck, targetBorderEnabled)
+    if self.targetBorderColorSwatch then
+      self.targetBorderColorSwatch:SetAlpha(targetBorderEnabled and 1.0 or 0.45)
+      if self.targetBorderColorSwatch.EnableMouse then self.targetBorderColorSwatch:EnableMouse(targetBorderEnabled) end
     end
     if self.targetGlowSizeSlider then
       self.targetGlowSizeSlider:SetAlpha(glowEnabled and 1.0 or 0.45)
@@ -1714,6 +1970,12 @@ function BNP:CreateOptions()
       if self.targetArrowSizeSlider.EnableMouse then self.targetArrowSizeSlider:EnableMouse(arrowsEnabled) end
     end
     SetCheckEnabled(self.targetArrowThickCheck, arrowsEnabled)
+
+    local targetScaleEnabled = BNP.IsTargetScaleEnabled and BNP:IsTargetScaleEnabled() or false
+    if self.targetScaleSlider then
+      self.targetScaleSlider:SetAlpha(targetScaleEnabled and 1.0 or 0.45)
+      if self.targetScaleSlider.EnableMouse then self.targetScaleSlider:EnableMouse(targetScaleEnabled) end
+    end
   end
 
   frame:ShowTab("nameplates")
@@ -1829,6 +2091,8 @@ function BNP:SyncOptions()
   end
   if frame.hidePlayerNamesCheck then frame.hidePlayerNamesCheck:SetChecked(self:HidePlayerNamesEnabled()) end
   if frame.hideNPCNamesCheck then frame.hideNPCNamesCheck:SetChecked(self:HideNPCNamesEnabled()) end
+  if frame.customNameColorCheck then frame.customNameColorCheck:SetChecked(self:IsCustomNameColorEnabled()) end
+  if frame.nameColorSwatch and frame.nameColorSwatch.RefreshColor then frame.nameColorSwatch:RefreshColor() end
   if frame.debuffsCheck then frame.debuffsCheck:SetChecked(self:AreDebuffsEnabled()) end
   if frame.debuffPositionDropdown then
     local position = self:GetDebuffPosition()
@@ -1853,6 +2117,24 @@ function BNP:SyncOptions()
     UIDropDownMenu_SetText(labels[position] or "Top", frame.immunityPositionDropdown)
   end
   if frame.totemIndicatorsCheck then frame.totemIndicatorsCheck:SetChecked(self:AreTotemIndicatorsEnabled()) end
+  if frame.questPlateIndicatorsCheck then
+    frame.questPlateIndicatorsCheck:SetChecked(self.AreQuestPlateIndicatorsEnabled and self:AreQuestPlateIndicatorsEnabled() or false)
+  end
+  if frame.questPlateIconSizeSlider then
+    local size = self.GetQuestPlateIconSize and self:GetQuestPlateIconSize() or 16
+    frame.questPlateIconSizeSlider:SetValue(size)
+    getglobal(frame.questPlateIconSizeSlider:GetName() .. "Text"):SetText("Quest Icon Size: " .. size)
+  end
+  if frame.questPlateXOffsetSlider then
+    local value = self.GetQuestPlateXOffset and self:GetQuestPlateXOffset() or 10
+    frame.questPlateXOffsetSlider:SetValue(value)
+    getglobal(frame.questPlateXOffsetSlider:GetName() .. "Text"):SetText("Quest Icon X Offset: " .. (value > 0 and "+" or "") .. value)
+  end
+  if frame.questPlateYOffsetSlider then
+    local value = self.GetQuestPlateYOffset and self:GetQuestPlateYOffset() or -7
+    frame.questPlateYOffsetSlider:SetValue(value)
+    getglobal(frame.questPlateYOffsetSlider:GetName() .. "Text"):SetText("Quest Icon Y Offset: " .. (value > 0 and "+" or "") .. value)
+  end
   frame.castbarsCheck:SetChecked(self:AreCastbarsEnabled())
   if frame.castbarTestCheck then
     frame.castbarTestCheck:SetChecked(self.IsCastbarTestMode and self:IsCastbarTestMode() or false)
@@ -1887,6 +2169,43 @@ function BNP:SyncOptions()
     UIDropDownMenu_SetText(labels[outline] or "Outline", frame.healthTextOutlineDropdown)
   end
   frame.targetFocusCheck:SetChecked(self:IsTargetFocusEnabled())
+  if frame.targetBorderColorCheck then
+    frame.targetBorderColorCheck:SetChecked(self.IsTargetBorderColorEnabled and self:IsTargetBorderColorEnabled() or false)
+  end
+  if frame.targetBorderBoldCheck then
+    frame.targetBorderBoldCheck:SetChecked(self.IsTargetBorderBoldEnabled and self:IsTargetBorderBoldEnabled() or false)
+  end
+  if frame.targetBorderColorSwatch and frame.targetBorderColorSwatch.RefreshColor then
+    frame.targetBorderColorSwatch:RefreshColor()
+  end
+  if frame.targetScaleEnabledCheck then
+    frame.targetScaleEnabledCheck:SetChecked(self.IsTargetScaleEnabled and self:IsTargetScaleEnabled() or false)
+  end
+  if frame.targetScaleSlider then
+    local targetScale = self.GetTargetScale and self:GetTargetScale() or 1.20
+    frame.targetScaleSlider:SetValue(targetScale)
+    getglobal(frame.targetScaleSlider:GetName() .. "Text"):SetText(string.format("Target Scale: %.2fx", targetScale))
+  end
+  if frame.raidMarkPositionDropdown then
+    local position = self.GetRaidMarkPosition and self:GetRaidMarkPosition() or "top"
+    local labels = { top = "Top", left = "Left", right = "Right" }
+    UIDropDownMenu_SetSelectedValue(frame.raidMarkPositionDropdown, position)
+    UIDropDownMenu_SetText(labels[position] or "Top", frame.raidMarkPositionDropdown)
+  end
+  if frame.raidMarkXOffsetSlider or frame.raidMarkYOffsetSlider then
+    frame.BNPSyncingRaidMarkControls = true
+    if frame.raidMarkXOffsetSlider then
+      local value = self.GetRaidMarkXOffset and self:GetRaidMarkXOffset() or 0
+      frame.raidMarkXOffsetSlider:SetValue(value)
+      getglobal(frame.raidMarkXOffsetSlider:GetName() .. "Text"):SetText("Raid Mark X Offset: " .. (value > 0 and "+" or "") .. value)
+    end
+    if frame.raidMarkYOffsetSlider then
+      local value = self.GetRaidMarkYOffset and self:GetRaidMarkYOffset() or 0
+      frame.raidMarkYOffsetSlider:SetValue(value)
+      getglobal(frame.raidMarkYOffsetSlider:GetName() .. "Text"):SetText("Raid Mark Y Offset: " .. (value > 0 and "+" or "") .. value)
+    end
+    frame.BNPSyncingRaidMarkControls = nil
+  end
   if frame.targetArrowsCheck then
     frame.targetArrowsCheck:SetChecked(self.AreTargetArrowsEnabled and self:AreTargetArrowsEnabled() or false)
   end

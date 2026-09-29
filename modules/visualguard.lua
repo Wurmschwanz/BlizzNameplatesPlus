@@ -86,6 +86,14 @@ local function ApplyBorderStyle(plate)
   end
 end
 
+-- Public one-plate restore used by target-only border coloring. This keeps the
+-- normal gold / Dark Nameplate Border behavior in one authoritative place.
+function BNP:ApplyBaseNameplateBorderStyle(plate)
+  if not plate then return end
+  RestoreBorder(plate)
+  ApplyBorderStyle(plate)
+end
+
 local function ApplyLevelVisibility(plate)
   local level = plate and plate.level
   if not level then return end

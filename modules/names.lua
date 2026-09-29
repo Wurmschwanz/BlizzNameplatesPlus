@@ -8,6 +8,90 @@ local function CaptureDefaultNameFontSize(plate)
   if size then BNP.defaultNameFontSize = size end
 end
 
+-- Vanilla's native name FontString can be recolored directly by the client
+-- (for example when threat/aggro changes). Lua method wrappers are not enough
+-- to stop those internal updates. When Custom Name Color is enabled, BNP draws
+-- its own FontString directly above the native name instead. The Blizzard text
+-- may still change color underneath, but the visible BNP copy stays stable.
+local function EnsureCustomNameOverlay(plate)
+  if not plate or not plate.name then return nil end
+  if plate.BNPCustomNameOverlay then return plate.BNPCustomNameOverlay end
+  if not plate.CreateFontString then return nil end
+
+  local parent = plate.name.GetParent and plate.name:GetParent() or plate
+  local overlay = parent:CreateFontString(nil, "OVERLAY")
+  if not overlay then return nil end
+
+  overlay:ClearAllPoints()
+  overlay:SetPoint("CENTER", plate.name, "CENTER", 0, 0)
+  overlay:Hide()
+
+  plate.BNPCustomNameOverlay = overlay
+  return overlay
+end
+
+local function SyncCustomNameOverlay(plate)
+  if not plate or not plate.name then return end
+
+  local enabled
+  if BNP.IsCustomNameColorEnabled then
+    enabled = BNP:IsCustomNameColorEnabled()
+  else
+    enabled = BNP_DB and BNP_DB.customNameColor == true
+  end
+
+  local overlay = plate.BNPCustomNameOverlay
+  if not enabled then
+    if overlay then overlay:Hide() end
+    if plate.BNPNameHiddenByCustomColor then
+      plate.BNPNameHiddenByCustomColor = nil
+      if not plate.BNPNameHidden and plate.name.Show then
+        plate.name:Show()
+      end
+    end
+    plate.BNPCustomNameColorApplied = nil
+    return
+  end
+
+  overlay = EnsureCustomNameOverlay(plate)
+  if not overlay then return end
+
+  -- Mirror only presentation data that belongs to the native name. Keeping the
+  -- copy anchored to plate.name means Name Y Offset and nameplate scaling keep
+  -- working automatically without a second positioning system.
+  if plate.name.GetFont and overlay.SetFont then
+    local font, size, flags = plate.name:GetFont()
+    if font and size then overlay:SetFont(font, size, flags) end
+  end
+
+  if plate.name.GetText and overlay.SetText then
+    overlay:SetText(plate.name:GetText() or "")
+  end
+
+  local r, g, b = 1, 1, 1
+  if BNP.GetNameColor then r, g, b = BNP:GetNameColor() end
+  overlay:SetTextColor(r, g, b, 1)
+
+  if plate.BNPNameHidden then
+    overlay:Hide()
+    if plate.name.Hide then plate.name:Hide() end
+  else
+    overlay:Show()
+    -- Hide Blizzard's native name while the custom copy is active. This is
+    -- the important part: the client is free to recolor the hidden native
+    -- FontString internally, but there is no red frame left underneath that
+    -- can flash through between Lua updates.
+    if plate.name.Hide then plate.name:Hide() end
+    plate.BNPNameHiddenByCustomColor = true
+  end
+
+  plate.BNPCustomNameColorApplied = true
+end
+
+local function ApplyNameColor(plate)
+  SyncCustomNameOverlay(plate)
+end
+
 local function ApplyNameFont(plate)
   if not plate or not plate.name or not plate.name.GetFont or not plate.name.SetFont then return end
   CaptureDefaultNameFontSize(plate)
@@ -33,6 +117,7 @@ function BNP:RefreshNameAppearance()
   for plate in pairs(BNP.plates or {}) do
     if plate then
       ApplyNameFont(plate)
+      ApplyNameColor(plate)
       if BNP.ApplyNameFontYOffset then BNP:ApplyNameFontYOffset(plate) end
     end
   end
@@ -111,12 +196,14 @@ local function RestoreIfBNPHid(plate)
     plate.name:Show()
     plate.BNPNameHidden = nil
   end
+  SyncCustomNameOverlay(plate)
 end
 
 local function UpdatePlateName(plate, resetIdentity)
   if not plate or not plate.name then return end
 
   ApplyNameFont(plate)
+  ApplyNameColor(plate)
   if BNP.ApplyNameFontYOffset then BNP:ApplyNameFontYOffset(plate) end
 
   if resetIdentity then
@@ -140,10 +227,12 @@ local function UpdatePlateName(plate, resetIdentity)
     if not plate.BNPNameHidden then
       plate.name:Hide()
       plate.BNPNameHidden = true
+      if plate.BNPCustomNameOverlay then plate.BNPCustomNameOverlay:Hide() end
     elseif plate.name.IsShown and plate.name:IsShown() then
       -- The client may re-show Blizzard regions while updating/recycling a
       -- plate. Re-enforce only names BNP explicitly owns as hidden.
       plate.name:Hide()
+      if plate.BNPCustomNameOverlay then plate.BNPCustomNameOverlay:Hide() end
     end
   else
     RestoreIfBNPHid(plate)
@@ -189,7 +278,8 @@ if BNP.libnameplate then
     -- UnitExists/UnitIsPlayer work for every visible plate on every 0.10s pass.
     -- If BNP previously hid this specific name, still run once to restore it.
     local anyHideEnabled = BNP_DB and (BNP_DB.hidePlayerNames or BNP_DB.hideNPCNames)
-    if not anyHideEnabled and not current.BNPNameHidden then return end
+    local customColorEnabled = BNP_DB and BNP_DB.customNameColor == true
+    if not anyHideEnabled and not customColorEnabled and not current.BNPNameHidden and not current.BNPCustomNameColorApplied then return end
 
     UpdatePlateName(current, false)
   end)

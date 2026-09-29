@@ -2960,6 +2960,11 @@ local function SyncForeignCCs(unit, guid, now, snapshot, eventAuthoritative)
       aura.stacks = tonumber(stacks) or 0
       aura.lastSeen = now
       aura.missingScans = nil
+      -- Event-driven nameplate watchers do not run the legacy 0.15s foreign-CC
+      -- poller. Remember that this positive sighting came from UNIT_AURA so the
+      -- renderer keeps it visible until a later authoritative UNIT_AURA removes
+      -- it (or the normal aura timer expires). Polling callers reset this flag.
+      aura.eventDriven = eventAuthoritative and true or false
       -- Vanilla/SuperWoW does not reliably provide foreign application time.
       -- Use a conservative local estimate for text only; live aura presence is
       -- authoritative for appearance/removal.
@@ -3071,7 +3076,13 @@ local function UpdateCCRow(plate, guid, cache, now)
     local key, aura
     for key, aura in pairs(live or {}) do
       if count >= MAX_VISIBLE_ICONS then break end
-      if aura.def and seenOwn[key] ~= seenOwnGeneration and now - (aura.lastSeen or 0) <= 0.60 then
+      -- Legacy polled CCs need a freshness timeout because a projected token can
+      -- go stale. Event-driven CCs are different: after a positive UNIT_AURA
+      -- snapshot there is intentionally no periodic poll, so lastSeen naturally
+      -- becomes older than 0.60s while the CC is still active. Keep those entries
+      -- until SyncForeignCCs receives an authoritative removal event.
+      local liveFresh = aura.eventDriven or (now - (aura.lastSeen or 0) <= 0.60)
+      if aura.def and seenOwn[key] ~= seenOwnGeneration and liveFresh then
         count = count + 1
         local entry = pool[count]
         active[count] = entry

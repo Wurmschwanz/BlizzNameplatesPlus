@@ -26,6 +26,7 @@ spells\registry_shadow.lua
 modules\debug.lua
 modules\spellprobe.lua
 modules\scale.lua
+modules\raidmarks.lua
 modules\names.lua
 modules\fullalpha.lua
 modules\shagu_darkmode.lua
@@ -34,6 +35,7 @@ modules\unknown.lua
 modules\auras.lua
 modules\immunities.lua
 modules\totems.lua
+modules\questplates.lua
 modules\aurarecorder.lua
 modules\classcolors.lua
 modules\castbar.lua

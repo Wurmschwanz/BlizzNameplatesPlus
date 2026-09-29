@@ -4,6 +4,9 @@ local NON_TARGET_ALPHA = 0.55
 local TARGET_RESOLVE_CACHE_TIME = 0.05
 local ALPHA_IDENTITY_HOLD_TIME = 0.20
 local FOREIGN_TAG_SCAN_INTERVAL = 0.10
+local TARGET_BORDER_TEXTURE = "Interface\\AddOns\\BlizzNameplatesPlus\\media\\classic_nameplate_border.tga"
+local TARGET_BORDER_BOLD_TEXTURE = "Interface\\AddOns\\BlizzNameplatesPlus\\media\\classic_nameplate_border_bold.tga"
+
 
 local targetResolveCacheGUID = nil
 local targetResolveCacheAt = -100
@@ -578,6 +581,74 @@ local function ApplyTargetGlow(plate)
 end
 
 
+local function ApplyTargetBorderColor(plate)
+  if not plate or not plate:IsShown() then return end
+
+  local border = plate.border
+  if not border or not border.SetVertexColor then return end
+
+  -- Hide Border remains authoritative. Never make or recolor a hidden border
+  -- visible just because this plate is the current target.
+  if BNP.IsNameplateBorderHidden and BNP:IsNameplateBorderHidden() then
+    return
+  end
+
+  local enabled = BNP.IsTargetBorderColorEnabled and BNP:IsTargetBorderColorEnabled()
+  local isTarget = plate.BNPIsCurrentTarget and true or false
+
+  if enabled and isTarget then
+    local r, g, b = 1.00, 0.20, 0.20
+    if BNP.GetTargetBorderColor then r, g, b = BNP:GetTargetBorderColor() end
+
+    local boldEnabled = BNP.IsTargetBorderBoldEnabled and BNP:IsTargetBorderBoldEnabled()
+    local wantedTexture = boldEnabled and TARGET_BORDER_BOLD_TEXTURE or TARGET_BORDER_TEXTURE
+    if border.SetTexture and plate.BNPTargetBorderTexture ~= wantedTexture then
+      border:SetTexture(wantedTexture)
+      plate.BNPTargetBorderTexture = wantedTexture
+    end
+
+    local needsColor = true
+    if border.GetVertexColor then
+      local oldR, oldG, oldB, oldA = border:GetVertexColor()
+      needsColor = math.abs((oldR or 1) - r) > 0.001
+        or math.abs((oldG or 1) - g) > 0.001
+        or math.abs((oldB or 1) - b) > 0.001
+        or math.abs((oldA or 1) - 1) > 0.001
+    end
+    if needsColor then border:SetVertexColor(r, g, b, 1) end
+
+    plate.BNPTargetBorderOverride = true
+    return
+  end
+
+  -- Restore only plates BNP previously tinted as a target.
+  -- ApplyBaseNameplateBorderStyle also restores the normal border texture,
+  -- so Bold Target Border never leaves an extra/alternate frame behind. This avoids doing
+  -- border work on every non-target plate every rendered frame.
+  if plate.BNPTargetBorderOverride then
+    if BNP.ApplyBaseNameplateBorderStyle then
+      BNP:ApplyBaseNameplateBorderStyle(plate)
+    else
+      -- Safe load-order fallback; visualguard normally owns this restore.
+      if BNP.IsDarkNameplateBorderEnabled and BNP:IsDarkNameplateBorderEnabled() then
+        border:SetVertexColor(0.3, 0.3, 0.3, 0.9)
+      else
+        border:SetVertexColor(1, 1, 1, 1)
+      end
+    end
+    plate.BNPTargetBorderOverride = nil
+    plate.BNPTargetBorderTexture = nil
+  end
+end
+
+function BNP:RefreshTargetBorderColor()
+  local plate
+  for plate in pairs(self.plates or {}) do
+    ApplyTargetBorderColor(plate)
+  end
+end
+
+
 local TARGET_ARROW_TEXTURES = {
   chevron = {
     thin = "Interface\\AddOns\\BlizzNameplatesPlus\\media\\target_arrow_chevron_thin.tga",
@@ -801,9 +872,17 @@ local function InstallAlphaGuard(plate)
       BNP:MaintainNameplateYOffset(current)
     end
 
+    -- Blizzard and the scale/Y-offset wrapper may restore the native raid icon
+    -- anchor while the plate is being projected. Reapply the optional custom
+    -- Raid Mark position afterwards so it stays stable without touching its
+    -- texture, visibility or size.
+    if BNP.MaintainRaidMarkPosition then BNP:MaintainRaidMarkPosition(current) end
+
     ApplyTargetAlpha(current)
+    if BNP.MaintainTargetScale then BNP:MaintainTargetScale(current) end
     ApplyTargetGlow(current)
     ApplyTargetArrows(current)
+    ApplyTargetBorderColor(current)
     ApplyForeignTagVisual(current)
     ApplyTargetFrameLevel(current)
   end)
@@ -827,8 +906,10 @@ if BNP.libnameplate then
     end
     InstallAlphaGuard(current)
     ApplyTargetAlpha(current)
+    if BNP.MaintainTargetScale then BNP:MaintainTargetScale(current) end
     ApplyTargetGlow(current)
     ApplyTargetArrows(current)
+    ApplyTargetBorderColor(current)
     ApplyForeignTagVisual(current, true)
     ApplyTargetFrameLevel(current)
   end)
@@ -847,6 +928,7 @@ targetEvents:SetScript("OnEvent", function()
     if classicTargetAvailable then
       plate.BNPAlphaIdentityHoldUntil = nil
       ApplyTargetAlpha(plate)
+      if BNP.MaintainTargetScale then BNP:MaintainTargetScale(plate) end
     else
       plate.BNPAlphaIdentityHoldUntil = holdUntil
       if plate.GetAlpha and plate.SetAlpha and plate:GetAlpha() ~= 1 then
@@ -855,6 +937,7 @@ targetEvents:SetScript("OnEvent", function()
     end
     ApplyTargetFrameLevel(plate)
     ApplyTargetArrows(plate)
+    ApplyTargetBorderColor(plate)
   end
 
   if BNP.RefreshAuraPriorityAlpha then BNP:RefreshAuraPriorityAlpha() end
@@ -865,8 +948,10 @@ function BNP:RefreshTargetFocus()
   local plate
   for plate in pairs(self.plates or {}) do
     ApplyTargetAlpha(plate)
+    if BNP.MaintainTargetScale then BNP:MaintainTargetScale(plate) end
     ApplyTargetGlow(plate)
     ApplyTargetArrows(plate)
+    ApplyTargetBorderColor(plate)
     ApplyForeignTagVisual(plate)
   end
 end

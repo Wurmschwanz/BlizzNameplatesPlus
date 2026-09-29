@@ -15,12 +15,43 @@ function BNP:GetNameplateScale()
   return Clamp(tonumber(BNP_DB.nameplateScale) or DEFAULT_SCALE)
 end
 
-local function EffectiveScale()
+local function GetTargetScaleMultiplier(plate)
+  if plate and plate.BNPIsCurrentTarget and BNP.IsTargetScaleEnabled and BNP:IsTargetScaleEnabled() then
+    if BNP.GetTargetScale then return BNP:GetTargetScale() end
+  end
+  return 1.0
+end
+
+local function EffectiveScale(plate)
   local uiScale = 1.0
   if UIParent and UIParent.GetScale then
     uiScale = UIParent:GetScale() or 1.0
   end
-  return uiScale * BNP:GetNameplateScale()
+  return uiScale * BNP:GetNameplateScale() * GetTargetScaleMultiplier(plate)
+end
+
+local function ApplyDetachedTargetScale(plate, multiplier)
+  if not plate then return end
+  multiplier = multiplier or 1.0
+
+  -- Auras / CC / immunities intentionally live beside the projected nameplate
+  -- so they do not inherit Blizzard alpha changes. The totem replacement icon
+  -- is also a direct child of the projected plate rather than BNPScaleWrapper.
+  -- Scale these few detached visuals explicitly so Target Scale enlarges the
+  -- COMPLETE target presentation, not only the healthbar/border/name.
+  local function ApplyObject(object)
+    if object and object.SetScale and object.BNPTargetScaleApplied ~= multiplier then
+      object:SetScale(multiplier)
+      object.BNPTargetScaleApplied = multiplier
+    end
+  end
+
+  -- Do not collect these in an ipairs table: most plates do not have every
+  -- optional container, and Lua 5.1 stops ipairs at the first nil entry.
+  ApplyObject(plate.BNPAuraContainer)
+  ApplyObject(plate.BNPCCContainer)
+  ApplyObject(plate.BNPImmunityContainer)
+  ApplyObject(plate.BNPTotemIndicator)
 end
 
 local function CaptureAnchorState(object, plate, wrapper)
@@ -359,14 +390,43 @@ function BNP:ApplyNameplateScale(plate)
   local wrapper = plate.BNPScaleWrapper
   if not wrapper then return end
 
-  local scale = EffectiveScale()
-  wrapper:SetScale(scale)
-  ApplyWrapperOffset(plate, wrapper)
+  local targetMultiplier = GetTargetScaleMultiplier(plate)
+  local scale = EffectiveScale(plate)
 
-  -- ShaguTweaks also adjusts the original frame bounds so Blizzard's world
-  -- positioning remains correct while the child visuals honor UI scale.
-  plate:SetWidth(wrapper.originalWidth * scale)
-  plate:SetHeight(wrapper.originalHeight * scale)
+  -- Target identity is checked every frame, but only touch frame geometry when
+  -- the actual scale changes. This keeps target switching instant without
+  -- continuously rewriting width/height on every visible nameplate.
+  if wrapper.BNPLastAppliedScale ~= scale then
+    wrapper:SetScale(scale)
+
+    -- ShaguTweaks also adjusts the original frame bounds so Blizzard's world
+    -- positioning remains correct while the child visuals honor UI scale.
+    plate:SetWidth(wrapper.originalWidth * scale)
+    plate:SetHeight(wrapper.originalHeight * scale)
+    wrapper.BNPLastAppliedScale = scale
+  end
+
+  wrapper.BNPLastTargetScaleMultiplier = targetMultiplier
+  ApplyDetachedTargetScale(plate, targetMultiplier)
+  ApplyWrapperOffset(plate, wrapper)
+end
+
+function BNP:MaintainTargetScale(plate)
+  if not plate or not plate.IsShown or not plate:IsShown() then return end
+  EnsureScaleWrapper(plate)
+
+  local wrapper = plate.BNPScaleWrapper
+  if not wrapper then return end
+
+  local targetMultiplier = GetTargetScaleMultiplier(plate)
+  if wrapper.BNPLastTargetScaleMultiplier ~= targetMultiplier then
+    self:ApplyNameplateScale(plate)
+    return
+  end
+
+  -- Detached frames can be created after a unit was already targeted. Keep
+  -- their cached multiplier in sync without doing any wrapper geometry work.
+  ApplyDetachedTargetScale(plate, targetMultiplier)
 end
 
 function BNP:ApplyNameFontYOffset(plate)
@@ -398,6 +458,10 @@ function BNP:ApplyNameplateScaleAll()
   for plate in pairs(self.plates) do
     self:ApplyNameplateScale(plate)
   end
+end
+
+function BNP:RefreshTargetScale()
+  self:ApplyNameplateScaleAll()
 end
 
 function BNP:ApplyNameplateYOffsetAll()
@@ -463,6 +527,30 @@ if BNP.libnameplate then
   table.insert(BNP.libnameplate.OnShow, function(plate)
     local current = plate or this
     if not current then return end
+
+    -- Blizzard can reset projected nameplate geometry while a plate is hidden.
+    -- When the same target reappears, the cached multiplier is still identical
+    -- (for example 1.20 -> 1.20), so MaintainTargetScale would previously
+    -- assume nothing changed and skip reapplying the target geometry. That left
+    -- a recycled/reappearing target visually broken. Invalidate only BNP's
+    -- scale caches on every OnShow so the current plate is rebuilt once from
+    -- the known original dimensions. The strict target resolver in fullalpha
+    -- immediately corrects the multiplier afterwards if the recycled frame now
+    -- belongs to a different unit.
+    local wrapper = current.BNPScaleWrapper
+    if wrapper then
+      wrapper.BNPLastAppliedScale = nil
+      wrapper.BNPLastTargetScaleMultiplier = nil
+    end
+
+    local function InvalidateDetached(object)
+      if object then object.BNPTargetScaleApplied = nil end
+    end
+    InvalidateDetached(current.BNPAuraContainer)
+    InvalidateDetached(current.BNPCCContainer)
+    InvalidateDetached(current.BNPImmunityContainer)
+    InvalidateDetached(current.BNPTotemIndicator)
+
     BNP:ApplyNameplateScale(current)
   end)
 end

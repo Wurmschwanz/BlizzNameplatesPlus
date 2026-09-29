@@ -6,6 +6,8 @@ BNP.defaults = BNP.defaults or {
   comboPointsYOffset = 0,
   nameFontSize = 12,
   nameFontYOffset = 0,
+  customNameColor = false,
+  nameColor = { r = 1.00, g = 1.00, b = 1.00 },
   nonTargetAlpha = 1.0,
   iconSize = 18,
   auraFontSize = 8,
@@ -48,6 +50,14 @@ BNP.defaults = BNP.defaults or {
   healthTextFontSize = 9,
   healthTextOutline = "outline",
   targetFocus = true,
+  targetBorderColorEnabled = false,
+  targetBorderColor = { r = 1.00, g = 0.20, b = 0.20 },
+  targetBorderBold = false,
+  targetScaleEnabled = false,
+  targetScale = 1.20,
+  raidMarkPosition = "top",
+  raidMarkXOffset = 0,
+  raidMarkYOffset = 0,
   targetGlowColor = "white", -- legacy migration key
   targetColor = { r = 1.00, g = 1.00, b = 1.00 },
   targetGlowSize = 0,
@@ -62,6 +72,10 @@ BNP.defaults = BNP.defaults or {
   comboPoints = true,
   totemIndicators = true,
   totemIconSize = 24,
+  questPlateIndicators = true,
+  questPlateIconSize = 16,
+  questPlateXOffset = 10,
+  questPlateYOffset = -7,
 }
 
 function BNP:InitConfig()
@@ -73,6 +87,18 @@ function BNP:InitConfig()
   -- nameFontSize intentionally stays nil until the user moves the slider.
   -- This preserves the exact font size provided by Blizzard/skin addons on update.
   if BNP_DB.nameFontYOffset == nil then BNP_DB.nameFontYOffset = self.defaults.nameFontYOffset end
+  if BNP_DB.customNameColor == nil then BNP_DB.customNameColor = self.defaults.customNameColor end
+  if type(BNP_DB.nameColor) ~= "table" then
+    BNP_DB.nameColor = {
+      r = self.defaults.nameColor.r,
+      g = self.defaults.nameColor.g,
+      b = self.defaults.nameColor.b,
+    }
+  else
+    if BNP_DB.nameColor.r == nil then BNP_DB.nameColor.r = self.defaults.nameColor.r end
+    if BNP_DB.nameColor.g == nil then BNP_DB.nameColor.g = self.defaults.nameColor.g end
+    if BNP_DB.nameColor.b == nil then BNP_DB.nameColor.b = self.defaults.nameColor.b end
+  end
   if BNP_DB.nonTargetAlpha == nil then BNP_DB.nonTargetAlpha = self.defaults.nonTargetAlpha end
   if BNP_DB.iconSize == nil then BNP_DB.iconSize = self.defaults.iconSize end
   if BNP_DB.auraFontSize == nil then BNP_DB.auraFontSize = self.defaults.auraFontSize end
@@ -138,6 +164,24 @@ function BNP:InitConfig()
   if BNP_DB.healthTextFontSize == nil then BNP_DB.healthTextFontSize = self.defaults.healthTextFontSize end
   if BNP_DB.healthTextOutline == nil then BNP_DB.healthTextOutline = self.defaults.healthTextOutline end
   if BNP_DB.targetFocus == nil then BNP_DB.targetFocus = self.defaults.targetFocus end
+  if BNP_DB.targetBorderColorEnabled == nil then BNP_DB.targetBorderColorEnabled = self.defaults.targetBorderColorEnabled end
+  if BNP_DB.targetBorderBold == nil then BNP_DB.targetBorderBold = self.defaults.targetBorderBold end
+  if type(BNP_DB.targetBorderColor) ~= "table" then
+    BNP_DB.targetBorderColor = {
+      r = self.defaults.targetBorderColor.r,
+      g = self.defaults.targetBorderColor.g,
+      b = self.defaults.targetBorderColor.b,
+    }
+  else
+    if BNP_DB.targetBorderColor.r == nil then BNP_DB.targetBorderColor.r = self.defaults.targetBorderColor.r end
+    if BNP_DB.targetBorderColor.g == nil then BNP_DB.targetBorderColor.g = self.defaults.targetBorderColor.g end
+    if BNP_DB.targetBorderColor.b == nil then BNP_DB.targetBorderColor.b = self.defaults.targetBorderColor.b end
+  end
+  if BNP_DB.targetScaleEnabled == nil then BNP_DB.targetScaleEnabled = self.defaults.targetScaleEnabled end
+  if BNP_DB.targetScale == nil then BNP_DB.targetScale = self.defaults.targetScale end
+  if BNP_DB.raidMarkPosition == nil then BNP_DB.raidMarkPosition = self.defaults.raidMarkPosition end
+  if BNP_DB.raidMarkXOffset == nil then BNP_DB.raidMarkXOffset = self.defaults.raidMarkXOffset end
+  if BNP_DB.raidMarkYOffset == nil then BNP_DB.raidMarkYOffset = self.defaults.raidMarkYOffset end
   if BNP_DB.targetGlowColor == nil then BNP_DB.targetGlowColor = self.defaults.targetGlowColor end
   if BNP_DB.targetGlowSize == nil then BNP_DB.targetGlowSize = self.defaults.targetGlowSize end
   if BNP_DB.targetGlowOpacity == nil then BNP_DB.targetGlowOpacity = self.defaults.targetGlowOpacity end
@@ -182,6 +226,10 @@ function BNP:InitConfig()
   if BNP_DB.comboPoints == nil then BNP_DB.comboPoints = self.defaults.comboPoints end
   if BNP_DB.totemIndicators == nil then BNP_DB.totemIndicators = self.defaults.totemIndicators end
   if BNP_DB.totemIconSize == nil then BNP_DB.totemIconSize = self.defaults.totemIconSize end
+  if BNP_DB.questPlateIndicators == nil then BNP_DB.questPlateIndicators = self.defaults.questPlateIndicators end
+  if BNP_DB.questPlateIconSize == nil then BNP_DB.questPlateIconSize = self.defaults.questPlateIconSize end
+  if BNP_DB.questPlateXOffset == nil then BNP_DB.questPlateXOffset = self.defaults.questPlateXOffset end
+  if BNP_DB.questPlateYOffset == nil then BNP_DB.questPlateYOffset = self.defaults.questPlateYOffset end
 end
 
 function BNP:GetNameplateScale()
@@ -374,6 +422,36 @@ function BNP:HideNPCNamesEnabled()
   return BNP_DB and BNP_DB.hideNPCNames and true or false
 end
 
+function BNP:IsCustomNameColorEnabled()
+  return BNP_DB and BNP_DB.customNameColor == true
+end
+
+local function ClampNameColor(value, fallback)
+  value = tonumber(value)
+  if value == nil then value = fallback or 1 end
+  if value < 0 then value = 0 end
+  if value > 1 then value = 1 end
+  return value
+end
+
+function BNP:GetNameColor()
+  local fallback = self.defaults.nameColor or { r = 1, g = 1, b = 1 }
+  local color = BNP_DB and BNP_DB.nameColor or fallback
+  return ClampNameColor(color and color.r, fallback.r),
+         ClampNameColor(color and color.g, fallback.g),
+         ClampNameColor(color and color.b, fallback.b)
+end
+
+function BNP:SetNameColor(r, g, b)
+  if not BNP_DB then return end
+  BNP_DB.nameColor = {
+    r = ClampNameColor(r, 1),
+    g = ClampNameColor(g, 1),
+    b = ClampNameColor(b, 1),
+  }
+  if self.RefreshNameAppearance then self:RefreshNameAppearance() end
+end
+
 function BNP:AreCastbarsEnabled()
   return not BNP_DB or BNP_DB.castbars ~= false
 end
@@ -448,6 +526,44 @@ function BNP:IsTargetFocusEnabled()
   return not BNP_DB or BNP_DB.targetFocus ~= false
 end
 
+function BNP:IsTargetScaleEnabled()
+  return BNP_DB and BNP_DB.targetScaleEnabled == true
+end
+
+function BNP:GetTargetScale()
+  local value = (BNP_DB and tonumber(BNP_DB.targetScale)) or self.defaults.targetScale or 1.20
+  if value < 1.00 then value = 1.00 end
+  if value > 1.50 then value = 1.50 end
+  return value
+end
+
+function BNP:GetRaidMarkPosition()
+  local position = (BNP_DB and BNP_DB.raidMarkPosition) or self.defaults.raidMarkPosition or "top"
+  -- The Raid Mark UI intentionally exposes only Top / Left / Right. Migrate
+  -- values from the earlier experimental position list to Top automatically.
+  if position ~= "top" and position ~= "left" and position ~= "right" then
+    position = "top"
+    if BNP_DB then BNP_DB.raidMarkPosition = position end
+  end
+  return position
+end
+
+function BNP:GetRaidMarkXOffset()
+  local value = (BNP_DB and tonumber(BNP_DB.raidMarkXOffset)) or self.defaults.raidMarkXOffset or 0
+  if value < -50 then value = -50 end
+  if value > 50 then value = 50 end
+  if value >= 0 then return math.floor(value + 0.5) end
+  return math.ceil(value - 0.5)
+end
+
+function BNP:GetRaidMarkYOffset()
+  local value = (BNP_DB and tonumber(BNP_DB.raidMarkYOffset)) or self.defaults.raidMarkYOffset or 0
+  if value < -50 then value = -50 end
+  if value > 50 then value = 50 end
+  if value >= 0 then return math.floor(value + 0.5) end
+  return math.ceil(value - 0.5)
+end
+
 -- Target Glow and Target Arrows intentionally share one freely selectable RGB
 -- color. Tank Mode colors are stored separately and never touch this value.
 function BNP:GetTargetColor()
@@ -467,6 +583,36 @@ function BNP:SetTargetColor(r, g, b)
     b = ClampTankColor(b, 1),
   }
   if self.RefreshTargetFocus then self:RefreshTargetFocus() end
+end
+
+function BNP:IsTargetBorderColorEnabled()
+  return BNP_DB and BNP_DB.targetBorderColorEnabled == true
+end
+
+function BNP:IsTargetBorderBoldEnabled()
+  return BNP_DB and BNP_DB.targetBorderBold == true
+end
+
+function BNP:GetTargetBorderColor()
+  local fallback = self.defaults.targetBorderColor or { r = 1.00, g = 0.20, b = 0.20 }
+  local color = BNP_DB and BNP_DB.targetBorderColor or fallback
+  return ClampTankColor(color and color.r, fallback.r),
+         ClampTankColor(color and color.g, fallback.g),
+         ClampTankColor(color and color.b, fallback.b)
+end
+
+function BNP:SetTargetBorderColor(r, g, b)
+  if not BNP_DB then return end
+  BNP_DB.targetBorderColor = {
+    r = ClampTankColor(r, 1.00),
+    g = ClampTankColor(g, 0.20),
+    b = ClampTankColor(b, 0.20),
+  }
+  if self.RefreshTargetBorderColor then
+    self:RefreshTargetBorderColor()
+  elseif self.RefreshTargetFocus then
+    self:RefreshTargetFocus()
+  end
 end
 
 -- Compatibility aliases used by the rendering code. Both return the exact
@@ -540,6 +686,35 @@ function BNP:GetTotemIconSize()
   return value
 end
 
+
+
+
+function BNP:AreQuestPlateIndicatorsEnabled()
+  return not BNP_DB or BNP_DB.questPlateIndicators ~= false
+end
+
+function BNP:GetQuestPlateIconSize()
+  local value = (BNP_DB and tonumber(BNP_DB.questPlateIconSize)) or self.defaults.questPlateIconSize or 16
+  if value < 6 then value = 6 end
+  if value > 64 then value = 64 end
+  return math.floor(value + 0.5)
+end
+
+local function ClampQuestOffset(value)
+  value = tonumber(value) or 0
+  if value < -100 then value = -100 end
+  if value > 100 then value = 100 end
+  if value >= 0 then return math.floor(value + 0.5) end
+  return math.ceil(value - 0.5)
+end
+
+function BNP:GetQuestPlateXOffset()
+  return ClampQuestOffset(BNP_DB and BNP_DB.questPlateXOffset or self.defaults.questPlateXOffset)
+end
+
+function BNP:GetQuestPlateYOffset()
+  return ClampQuestOffset(BNP_DB and BNP_DB.questPlateYOffset or self.defaults.questPlateYOffset)
+end
 
 function BNP:AreDebuffsEnabled()
   return not BNP_DB or BNP_DB.debuffs ~= false
