@@ -271,8 +271,47 @@ local function IsForeignTagged(plate)
 end
 
 local function DesiredAlpha(plate, targetGUID)
-  -- No selected target: keep all nameplates fully visible.
   targetGUID = targetGUID or GetTargetGUID()
+
+  -- Target Only is deliberately implemented with alpha instead of Hide()/Show().
+  -- Blizzard owns projected nameplate visibility and recycles these frames as
+  -- units enter/leave the screen. Setting alpha to zero hides only the visual
+  -- while leaving the client free to manage the underlying frame safely.
+  --
+  -- With no selected target, keep every plate visible so the player can still
+  -- click a nameplate to acquire a target. Once a target exists, Target Only
+  -- must be fail-closed: newly projected/recycled plates are hidden unless they
+  -- are positively identified as the current target. Failing open here caused
+  -- every newly shown plate to pop back in while rotating the camera because
+  -- the projected unit token can be unavailable for a few frames.
+  local targetOnly = BNP.IsTargetOnlyNameplatesEnabled and
+                     BNP:IsTargetOnlyNameplatesEnabled()
+  if targetOnly then
+    if not targetGUID then return 1 end
+
+    local strictTargetPlate = GetStrictTargetPlate(targetGUID)
+    if strictTargetPlate then
+      if plate == strictTargetPlate then return 1 end
+      return 0
+    end
+
+    -- Strict resolution can be briefly unavailable while Blizzard recycles a
+    -- projected plate. During that window only accept exact unit/GUID evidence;
+    -- never use the visual name/level fallback because identical mobs could
+    -- otherwise make several plates visible at once.
+    local token = GetPlateToken(plate)
+    if token and UnitIsUnit then
+      local ok, sameUnit = pcall(UnitIsUnit, token, "target")
+      if ok and sameUnit then return 1 end
+    end
+
+    local plateGUID = GetVerifiedPlateGUID(plate)
+    if plateGUID and plateGUID == targetGUID then return 1 end
+
+    return 0
+  end
+
+  -- No selected target: keep all nameplates fully visible.
   if not targetGUID then return 1 end
 
   local classicTargetPlate, classicTargetAvailable =
@@ -826,15 +865,54 @@ local function ApplyTargetArrows(plate)
 end
 
 
+local function ApplyTargetOnlyPresentation(plate, alpha, targetOnly)
+  if not plate then return end
+
+  -- Auras/CC/immunities are sibling frames, so they do not inherit the
+  -- projected plate alpha. Keep them in lockstep with Target Only and restore
+  -- them to full opacity immediately when the option is disabled.
+  local detachedAlpha = targetOnly and alpha or 1
+  local function SetObjectAlpha(object)
+    if object and object.SetAlpha and
+       (not object.GetAlpha or object:GetAlpha() ~= detachedAlpha) then
+      object:SetAlpha(detachedAlpha)
+    end
+  end
+  SetObjectAlpha(plate.BNPAuraContainer)
+  SetObjectAlpha(plate.BNPCCContainer)
+  SetObjectAlpha(plate.BNPImmunityContainer)
+
+  -- BNP routes nameplate clicks through BNPScaleWrapper. Alpha-0 frames can
+  -- still receive mouse input in the WoW UI, so disable the wrapper hit area
+  -- for hidden non-targets and restore it for visible plates.
+  local wrapper = plate.BNPScaleWrapper
+  if wrapper and wrapper.EnableMouse then
+    local shouldEnableMouse = (not targetOnly) or alpha > 0
+    wrapper:EnableMouse(shouldEnableMouse)
+
+    if not shouldEnableMouse and BNP.BNPMouseoverOwner == wrapper then
+      BNP.BNPMouseoverOwner = nil
+      wrapper.BNPMouseoverUnit = nil
+      if SetMouseoverUnit then pcall(SetMouseoverUnit) end
+      if GameTooltip and GameTooltip.Hide then GameTooltip:Hide() end
+    end
+  end
+end
+
 local function ApplyTargetAlpha(plate)
   if not plate or not plate:IsShown() then return end
   local targetGUID = GetTargetGUID()
   local totemIconOnly = plate.BNPTotemLastKey and
                         BNP.AreTotemIndicatorsEnabled and BNP:AreTotemIndicatorsEnabled()
-  local wanted = totemIconOnly and 1 or DesiredAlpha(plate, targetGUID)
+  local targetOnly = BNP.IsTargetOnlyNameplatesEnabled and
+                     BNP:IsTargetOnlyNameplatesEnabled()
+  -- Totem icon replacement normally stays fully opaque, but Target Only must
+  -- apply to every projected nameplate consistently, including totems.
+  local wanted = (totemIconOnly and not targetOnly) and 1 or DesiredAlpha(plate, targetGUID)
   if plate:GetAlpha() ~= wanted then
     plate:SetAlpha(wanted)
   end
+  ApplyTargetOnlyPresentation(plate, wanted, targetOnly)
 
   -- Publish a STRICT single target identity for detached aura containers and
   -- target-only visuals. Do not reuse the alpha resolver here: its intentional
@@ -901,7 +979,14 @@ if BNP.libnameplate then
     if not current then return end
     InvalidateTargetResolution()
     current.BNPAlphaIdentityHoldUntil = GetTime() + ALPHA_IDENTITY_HOLD_TIME
-    if current.GetAlpha and current.SetAlpha and current:GetAlpha() ~= 1 then
+
+    -- Do not reset a recycled/newly projected plate to alpha 1 while Target
+    -- Only is active. That one-frame reset was visible as plates popping back
+    -- in when turning the camera. ApplyTargetAlpha below decides immediately
+    -- whether the frame is the target or must stay hidden.
+    local targetOnly = BNP.IsTargetOnlyNameplatesEnabled and
+                       BNP:IsTargetOnlyNameplatesEnabled()
+    if not targetOnly and current.GetAlpha and current.SetAlpha and current:GetAlpha() ~= 1 then
       current:SetAlpha(1)
     end
     InstallAlphaGuard(current)
@@ -924,8 +1009,12 @@ targetEvents:SetScript("OnEvent", function()
   local _, classicTargetAvailable = GetClassicAPITargetPlate(targetGUID)
   local holdUntil = GetTime() + ALPHA_IDENTITY_HOLD_TIME
   local plate
+  local targetOnly = BNP.IsTargetOnlyNameplatesEnabled and
+                     BNP:IsTargetOnlyNameplatesEnabled()
   for plate in pairs(BNP.plates or {}) do
-    if classicTargetAvailable then
+    if classicTargetAvailable or targetOnly then
+      -- Target Only is intentionally fail-closed and therefore does not use
+      -- the legacy full-alpha identity hold during target switches.
       plate.BNPAlphaIdentityHoldUntil = nil
       ApplyTargetAlpha(plate)
       if BNP.MaintainTargetScale then BNP:MaintainTargetScale(plate) end
@@ -962,4 +1051,16 @@ function BNP:RefreshNonTargetAlpha()
   for plate in pairs(self.plates or {}) do
     ApplyTargetAlpha(plate)
   end
+end
+
+function BNP:RefreshTargetOnlyNameplates()
+  InvalidateTargetResolution()
+  local plate
+  for plate in pairs(self.plates or {}) do
+    ApplyTargetAlpha(plate)
+  end
+  -- Aura/CC rows are sibling frames so they do not inherit plate alpha. Make
+  -- them follow Target Only explicitly, then restore them immediately when the
+  -- option is disabled.
+  if self.RefreshAuraPriorityAlpha then self:RefreshAuraPriorityAlpha() end
 end

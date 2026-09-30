@@ -35,6 +35,8 @@ BNP.defaults = BNP.defaults or {
   crowdControl = true,
   separateCCRow = true,
   showOtherCCs = true,
+  otherDebuffs = false,
+  otherDebuffSelections = {},
   pvpImmunities = true,
   immunityIconSize = 18,
   immunityPosition = "top",
@@ -50,6 +52,7 @@ BNP.defaults = BNP.defaults or {
   healthTextFontSize = 9,
   healthTextOutline = "outline",
   targetFocus = true,
+  targetOnlyNameplates = false,
   targetBorderColorEnabled = false,
   targetBorderColor = { r = 1.00, g = 0.20, b = 0.20 },
   targetBorderBold = false,
@@ -140,6 +143,8 @@ function BNP:InitConfig()
   if BNP_DB.crowdControl == nil then BNP_DB.crowdControl = (BNP_DB.debuffs ~= false) and true or false end
   if BNP_DB.separateCCRow == nil then BNP_DB.separateCCRow = self.defaults.separateCCRow end
   if BNP_DB.showOtherCCs == nil then BNP_DB.showOtherCCs = self.defaults.showOtherCCs end
+  if BNP_DB.otherDebuffs == nil then BNP_DB.otherDebuffs = self.defaults.otherDebuffs end
+  if type(BNP_DB.otherDebuffSelections) ~= "table" then BNP_DB.otherDebuffSelections = {} end
   if BNP_DB.pvpImmunities == nil then BNP_DB.pvpImmunities = self.defaults.pvpImmunities end
   if BNP_DB.immunityIconSize == nil then BNP_DB.immunityIconSize = BNP_DB.iconSize or self.defaults.immunityIconSize end
   if BNP_DB.immunityPosition == nil then BNP_DB.immunityPosition = self.defaults.immunityPosition end
@@ -164,6 +169,7 @@ function BNP:InitConfig()
   if BNP_DB.healthTextFontSize == nil then BNP_DB.healthTextFontSize = self.defaults.healthTextFontSize end
   if BNP_DB.healthTextOutline == nil then BNP_DB.healthTextOutline = self.defaults.healthTextOutline end
   if BNP_DB.targetFocus == nil then BNP_DB.targetFocus = self.defaults.targetFocus end
+  if BNP_DB.targetOnlyNameplates == nil then BNP_DB.targetOnlyNameplates = self.defaults.targetOnlyNameplates end
   if BNP_DB.targetBorderColorEnabled == nil then BNP_DB.targetBorderColorEnabled = self.defaults.targetBorderColorEnabled end
   if BNP_DB.targetBorderBold == nil then BNP_DB.targetBorderBold = self.defaults.targetBorderBold end
   if type(BNP_DB.targetBorderColor) ~= "table" then
@@ -526,6 +532,10 @@ function BNP:IsTargetFocusEnabled()
   return not BNP_DB or BNP_DB.targetFocus ~= false
 end
 
+function BNP:IsTargetOnlyNameplatesEnabled()
+  return BNP_DB and BNP_DB.targetOnlyNameplates == true
+end
+
 function BNP:IsTargetScaleEnabled()
   return BNP_DB and BNP_DB.targetScaleEnabled == true
 end
@@ -728,8 +738,51 @@ function BNP:IsAuraCooldownSpiralEnabled()
   return BNP_DB and BNP_DB.cooldownSpiral == true
 end
 
+function BNP:AreOtherDebuffsEnabled()
+  return BNP_DB and BNP_DB.otherDebuffs == true
+end
+
+function BNP:IsOtherDebuffSelected(key)
+  return key and self.OtherDebuffByKey and self.OtherDebuffByKey[key]
+    and BNP_DB and type(BNP_DB.otherDebuffSelections) == "table"
+    and BNP_DB.otherDebuffSelections[key] == true
+end
+
+function BNP:HasSelectedOtherDebuffs()
+  if not BNP_DB or type(BNP_DB.otherDebuffSelections) ~= "table" then return false end
+  local key, enabled
+  for key, enabled in pairs(BNP_DB.otherDebuffSelections) do
+    if enabled == true and self.OtherDebuffByKey and self.OtherDebuffByKey[key] then return true end
+  end
+  return false
+end
+
+function BNP:SetOtherDebuffSelected(key, enabled)
+  if not key then return end
+  BNP_DB = BNP_DB or {}
+  if type(BNP_DB.otherDebuffSelections) ~= "table" then BNP_DB.otherDebuffSelections = {} end
+  BNP_DB.otherDebuffSelections[key] = enabled and true or false
+end
+
+function BNP:SetOtherDebuffClassEnabled(classKey, enabled)
+  local defs = self.OtherDebuffDefs and self.OtherDebuffDefs[classKey]
+  if not defs then return end
+  local i
+  for i = 1, table.getn(defs) do
+    self:SetOtherDebuffSelected(defs[i].key, enabled)
+  end
+end
+
+function BNP:SetAllOtherDebuffsEnabled(enabled)
+  local classOrder = self.OtherDebuffClassOrder or {}
+  local i
+  for i = 1, table.getn(classOrder) do
+    self:SetOtherDebuffClassEnabled(classOrder[i], enabled)
+  end
+end
+
 function BNP:AreAnyAurasEnabled()
-  return self:AreDebuffsEnabled() or self:AreCrowdControlEnabled()
+  return self:AreDebuffsEnabled() or self:AreCrowdControlEnabled() or self:AreOtherDebuffsEnabled()
 end
 
 function BNP:IsSeparateCCRowEnabled()

@@ -30,6 +30,41 @@ local function EnsureCustomNameOverlay(plate)
   return overlay
 end
 
+-- The custom name uses a separate FontString so Blizzard cannot recolor it.
+-- A newly-created FontString does not automatically inherit the native
+-- nameplate text shadow, so mirror that presentation here as well.
+local function SyncCustomNameShadow(source, target)
+  if not source or not target then return end
+
+  local shadowCopied = false
+  if source.GetShadowColor and target.SetShadowColor then
+    local r, g, b, a = source:GetShadowColor()
+    if r ~= nil and g ~= nil and b ~= nil then
+      target:SetShadowColor(r, g, b, a or 1)
+      shadowCopied = true
+    end
+  end
+
+  -- Vanilla/older clients or replacement FontStrings may not expose the
+  -- shadow getters. Keep the classic Blizzard-style drop shadow in that case.
+  if not shadowCopied and target.SetShadowColor then
+    target:SetShadowColor(0, 0, 0, 1)
+  end
+
+  local offsetCopied = false
+  if source.GetShadowOffset and target.SetShadowOffset then
+    local x, y = source:GetShadowOffset()
+    if x ~= nil and y ~= nil then
+      target:SetShadowOffset(x, y)
+      offsetCopied = true
+    end
+  end
+
+  if not offsetCopied and target.SetShadowOffset then
+    target:SetShadowOffset(1, -1)
+  end
+end
+
 local function SyncCustomNameOverlay(plate)
   if not plate or not plate.name then return end
 
@@ -63,6 +98,8 @@ local function SyncCustomNameOverlay(plate)
     local font, size, flags = plate.name:GetFont()
     if font and size then overlay:SetFont(font, size, flags) end
   end
+
+  SyncCustomNameShadow(plate.name, overlay)
 
   if plate.name.GetText and overlay.SetText then
     overlay:SetText(plate.name:GetText() or "")

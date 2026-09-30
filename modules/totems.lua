@@ -207,9 +207,15 @@ local function SuppressTotemPlateVisuals(plate, forceCapture)
     state.indicator = indicator
   end
 
-  -- Important PvP totems should remain clearly visible even when BNP's
-  -- non-target alpha option would normally fade the underlying nameplate.
-  if plate.SetAlpha and plate.GetAlpha and plate:GetAlpha() ~= 1 then plate:SetAlpha(1) end
+  -- Important PvP totems normally stay fully visible even when BNP's
+  -- non-target alpha option fades regular plates. Target Only is the explicit
+  -- exception: the totem icon is a child of the plate and must disappear with
+  -- every other non-target nameplate.
+  local targetOnly = BNP.IsTargetOnlyNameplatesEnabled and
+                     BNP:IsTargetOnlyNameplatesEnabled()
+  if not targetOnly and plate.SetAlpha and plate.GetAlpha and plate:GetAlpha() ~= 1 then
+    plate:SetAlpha(1)
+  end
 
   if forceCapture or not state.nextCapture or now >= state.nextCapture then
     CaptureTotemPlateVisuals(plate, state, now)

@@ -367,6 +367,21 @@ end
 local function ApplyTargetAuraPriority(plate, container)
   if not container then return end
 
+  -- Aura/CC containers are siblings of the projected nameplate and therefore
+  -- do not inherit its alpha. In Target Only mode explicitly mirror the plate
+  -- alpha so hidden non-target plates cannot leave floating DoT/CC icons behind.
+  -- DesiredAlpha fails open while target identity is unresolved, so this also
+  -- stays flicker-safe during target switches and dense nameplate recycling.
+  if BNP.IsTargetOnlyNameplatesEnabled and BNP:IsTargetOnlyNameplatesEnabled() then
+    local alpha = 1
+    if plate and plate.GetAlpha then
+      local ok, value = pcall(plate.GetAlpha, plate)
+      if ok and value ~= nil then alpha = value end
+    end
+    SetTargetPriorityAuraAlpha(container, alpha)
+    return
+  end
+
   -- Flicker fix: aura opacity must not depend on transient target/nameplate
   -- resolution. In dense raid stacks ClassicAPI/SuperWoW can briefly resolve
   -- a projected plate differently, which previously made the whole debuff/CC
@@ -977,6 +992,7 @@ local function ClearGUIDAuraState(guid)
   if BNP.svExpiryByGUID then BNP.svExpiryByGUID[guid] = nil end
   if BNP.svRenderRevisionByGUID then BNP.svRenderRevisionByGUID[guid] = nil end
   if BNP.guidLiveCCs then BNP.guidLiveCCs[guid] = nil end
+  if BNP.guidOtherDebuffs then BNP.guidOtherDebuffs[guid] = nil end
   if BNP.pendingAuras then BNP.pendingAuras[guid] = nil end
   if BNP.pvpAuraProtection then BNP.pvpAuraProtection[guid] = nil end
   if BNP.darkHarvest and BNP.darkHarvest.guid == guid then BNP.darkHarvest = nil end
@@ -998,6 +1014,7 @@ local function ClearHarmfulAuraStateOnly(guid)
   if BNP.svExpiryByGUID then BNP.svExpiryByGUID[guid] = nil end
   if BNP.svRenderRevisionByGUID then BNP.svRenderRevisionByGUID[guid] = nil end
   if BNP.guidLiveCCs then BNP.guidLiveCCs[guid] = nil end
+  if BNP.guidOtherDebuffs then BNP.guidOtherDebuffs[guid] = nil end
   if BNP.pendingAuras then BNP.pendingAuras[guid] = nil end
   if BNP.pvpAuraProtection then BNP.pvpAuraProtection[guid] = nil end
   if BNP.darkHarvest and BNP.darkHarvest.guid == guid then BNP.darkHarvest = nil end
@@ -2684,6 +2701,10 @@ local function SyncSharedAuras(unit, guid, now, snapshot, eventAuthoritative)
 end
 
 
+-- Optional other-class debuff tracking lives in modules/otherdebuffs.lua.
+-- auras.lua only consumes that cache for rendering and supplies live snapshots.
+
+
 -- Live aura removal ---------------------------------------------------------
 -- Timers alone are not enough for CC/roots/traps: effects may be dispelled,
 -- broken by damage, removed by trinkets, or otherwise end early.
@@ -2744,7 +2765,7 @@ local function NeedsExactLiveRemoval(key)
 end
 
 local function IsCrowdControlDef(def)
-  return def and EXACT_LIVE_REMOVAL[def.key] and true or false
+  return def and (def.isCC or EXACT_LIVE_REMOVAL[def.key]) and true or false
 end
 
 local function GetEntryIconSize(entry, forceCC)
@@ -3070,6 +3091,9 @@ local function UpdateCCRow(plate, guid, cache, now)
       end
     end
   end
+
+  -- Other Debuffs intentionally excludes Crowd Control. Foreign CCs are
+  -- handled only by BNP's dedicated CC tracker below.
 
   if WantsForeignCCs() then
     local live = guid and BNP.guidLiveCCs[guid]
@@ -3561,6 +3585,41 @@ local function UpdatePlate(plate, now)
     end
   end
 
+  -- Selected non-CC live debuffs from other players/classes are appended
+  -- after the local player's own entries. Crowd Control is handled exclusively
+  -- by BNP's dedicated CC tracker and never enters this list.
+  if BNP:WantsOtherDebuffs() and guid then
+    local otherLive = BNP.guidOtherDebuffs and BNP.guidOtherDebuffs[guid]
+    local classOrder = BNP.OtherDebuffClassOrder or {}
+    local classIndex, classKey, defs, defIndex, otherDef, otherAura
+    for classIndex = 1, table.getn(classOrder) do
+      if activeCount >= MAX_VISIBLE_ICONS then break end
+      classKey = classOrder[classIndex]
+      defs = BNP.OtherDebuffDefs and BNP.OtherDebuffDefs[classKey] or nil
+      if defs then
+        for defIndex = 1, table.getn(defs) do
+          if activeCount >= MAX_VISIBLE_ICONS then break end
+          otherDef = defs[defIndex]
+          if BNP:IsOtherDebuffDefSelected(otherDef) then
+            otherAura = otherLive and otherLive[otherDef.key] or nil
+            if otherAura and otherAura.livePresence
+              and not BNP:ActiveAuraHasSpellID(active, activeCount, otherAura.spellID) then
+              activeCount = activeCount + 1
+              local entry = activePool[activeCount]
+              active[activeCount] = entry
+              entry.def = otherDef
+              entry.aura = otherAura
+              local otherRemaining = otherAura.expires and (otherAura.expires - now) or nil
+              if otherRemaining and otherRemaining <= 0 then otherRemaining = nil end
+              entry.remaining = otherRemaining
+              entry.svRenderRevision = nil
+            end
+          end
+        end
+      end
+    end
+  end
+
   if activeCount > 1 then
     table.sort(active, BNP._AuraEntryOrderLess)
   end
@@ -3725,6 +3784,7 @@ function BNP:_HandleClassicUnitAura(token, plate)
   -- this exact event snapshot. eventAuthoritative=true removes the old
   -- multi-miss protection that was only required for projected SuperWoW units.
   SyncSharedAuras(token, guid, now, snapshot, true)
+  BNP:SyncOtherDebuffs(token, guid, now, snapshot, true)
   if BNP.guidAuras[guid] then
     SyncAuraRemoval(token, guid, now, snapshot, GetTargetGUID(), true)
   end
@@ -3900,11 +3960,12 @@ renderer:SetScript("OnUpdate", function()
 
   if doTargetRemovalScan and targetGUID and not targetSuppressed then
     local targetSnapshot = nil
-    if HAS_SHARED_AURAS or CacheHasTrackedAuras(BNP.guidAuras[targetGUID]) then
+    if HAS_SHARED_AURAS or (BNP.WantsOtherDebuffs and BNP:WantsOtherDebuffs()) or CacheHasTrackedAuras(BNP.guidAuras[targetGUID]) then
       targetSnapshot = CaptureLiveDebuffSnapshot("target", now)
     end
 
     SyncSharedAuras("target", targetGUID, now, targetSnapshot)
+    BNP:SyncOtherDebuffs("target", targetGUID, now, targetSnapshot)
 
     if BNP.guidAuras[targetGUID] then
       SyncAuraRemoval("target", targetGUID, now, targetSnapshot, targetGUID)
@@ -3951,11 +4012,12 @@ renderer:SetScript("OnUpdate", function()
           local identityTrusted = stableGUID and stableGUID == guid
           if identityTrusted then
             local snapshot = nil
-            if HAS_SHARED_AURAS or CacheHasTrackedAuras(BNP.guidAuras[stableGUID]) then
+            if HAS_SHARED_AURAS or (BNP.WantsOtherDebuffs and BNP:WantsOtherDebuffs()) or CacheHasTrackedAuras(BNP.guidAuras[stableGUID]) then
               snapshot = CaptureLiveDebuffSnapshot(token, now)
             end
 
             SyncSharedAuras(token, stableGUID, now, snapshot)
+            BNP:SyncOtherDebuffs(token, stableGUID, now, snapshot)
 
             -- Non-target exact-removal also requires multiple misses below, so
             -- crowded raid aura lists cannot make Banish/CC blink.

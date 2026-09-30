@@ -22,6 +22,7 @@ spells\mage.lua
 spells\druid.lua
 spells\shaman.lua
 spells\paladin.lua
+spells\other_debuffs.lua
 spells\registry_shadow.lua
 modules\debug.lua
 modules\spellprobe.lua
@@ -32,6 +33,7 @@ modules\fullalpha.lua
 modules\shagu_darkmode.lua
 modules\visualguard.lua
 modules\unknown.lua
+modules\otherdebuffs.lua
 modules\auras.lua
 modules\immunities.lua
 modules\totems.lua

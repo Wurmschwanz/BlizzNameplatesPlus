@@ -605,11 +605,226 @@ function BNP:OpenAuraRecorder()
   self:OpenEmergencyAuraRecorder()
 end
 
+local function BuildOtherDebuffsOptions(frame, otherPage, createSection)
+
+createSection(otherPage, "Other Class Debuffs", -4)
+
+local otherDebuffsEnabled = CreateCheck(otherPage, "Enable Other Class Debuffs", -28, function()
+  BNP_DB.otherDebuffs = this:GetChecked() and true or false
+  if BNP.RefreshOtherDebuffs then BNP:RefreshOtherDebuffs() end
+  if frame.RefreshOtherDebuffPage then frame:RefreshOtherDebuffPage() end
+end, 22)
+otherDebuffsEnabled:SetScript("OnEnter", function()
+  GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+  GameTooltip:SetText("Other Class Debuffs", 1, 0.82, 0)
+  GameTooltip:AddLine("Shows selected non-CC debuffs applied by other players/classes. The feature is off by default and never changes BNP's own-cast tracking.", 1, 1, 1, true)
+  GameTooltip:Show()
+end)
+otherDebuffsEnabled:SetScript("OnLeave", function() GameTooltip:Hide() end)
+frame.otherDebuffsEnabledCheck = otherDebuffsEnabled
+
+local otherNote = otherPage:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+otherNote:SetPoint("TOPLEFT", otherPage, "TOPLEFT", 28, -58)
+otherNote:SetWidth(390)
+otherNote:SetJustifyH("LEFT")
+otherNote:SetText("Select which non-CC foreign debuffs BNP should display. Crowd Control stays in BNP's dedicated CC system.")
+
+local OTHER_TAB_W = 80
+local OTHER_TAB_H = 20
+local OTHER_TAB_GAP = 3
+local OTHER_TAB_X = 5
+local OTHER_TAB_Y = -90
+frame.otherDebuffClassTabs = {}
+frame.otherSelectedClass = "warrior"
+
+local classOrder = BNP.OtherDebuffClassOrder or { "warrior", "rogue", "hunter", "mage", "warlock", "priest", "druid", "shaman", "paladin" }
+local classLabels = BNP.OtherDebuffClassLabels or {}
+local classColors = BNP.OtherDebuffClassColors or {}
+
+local i
+for i = 1, table.getn(classOrder) do
+  local classKey = classOrder[i]
+  local tab = CreateFrame("Button", nil, otherPage)
+  tab:SetWidth(OTHER_TAB_W)
+  tab:SetHeight(OTHER_TAB_H)
+  tab:EnableMouse(true)
+  if i <= 5 then
+    tab:SetPoint("TOPLEFT", otherPage, "TOPLEFT", OTHER_TAB_X + (i - 1) * (OTHER_TAB_W + OTHER_TAB_GAP), OTHER_TAB_Y)
+  else
+    tab:SetPoint("TOPLEFT", otherPage, "TOPLEFT", OTHER_TAB_X + (i - 6) * (OTHER_TAB_W + OTHER_TAB_GAP), OTHER_TAB_Y - OTHER_TAB_H - 3)
+  end
+
+  local color = classColors[classKey] or { 0.6, 0.6, 0.6 }
+  local bg = tab:CreateTexture(nil, "BACKGROUND")
+  bg:SetAllPoints(tab)
+  bg:SetTexture(color[1] * 0.4, color[2] * 0.4, color[3] * 0.4, 0.85)
+  tab.BNPBG = bg
+
+  local text = tab:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+  text:SetPoint("CENTER", tab, "CENTER", 0, 0)
+  text:SetText(classLabels[classKey] or classKey)
+  text:SetTextColor(color[1], color[2], color[3])
+  tab.BNPText = text
+  tab.BNPClassKey = classKey
+
+  tab:SetScript("OnClick", function()
+    frame.otherSelectedClass = this.BNPClassKey
+    if frame.RefreshOtherDebuffPage then frame:RefreshOtherDebuffPage() end
+  end)
+  tab:SetScript("OnEnter", function()
+    local c = classColors[this.BNPClassKey] or { 0.6, 0.6, 0.6 }
+    if this.BNPBG then this.BNPBG:SetTexture(c[1] * 0.6, c[2] * 0.6, c[3] * 0.6, 1) end
+  end)
+  tab:SetScript("OnLeave", function()
+    local c = classColors[this.BNPClassKey] or { 0.6, 0.6, 0.6 }
+    local selected = frame.otherSelectedClass == this.BNPClassKey
+    if this.BNPBG then
+      if selected then this.BNPBG:SetTexture(c[1] * 0.55, c[2] * 0.55, c[3] * 0.55, 1)
+      else this.BNPBG:SetTexture(c[1] * 0.4, c[2] * 0.4, c[3] * 0.4, 0.85) end
+    end
+  end)
+
+  frame.otherDebuffClassTabs[classKey] = tab
+end
+
+local selectedClassLabel = otherPage:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+selectedClassLabel:SetPoint("TOPLEFT", otherPage, "TOPLEFT", 14, -147)
+selectedClassLabel:SetText("Warrior")
+frame.otherSelectedClassLabel = selectedClassLabel
+
+local enableClassButton = CreateFrame("Button", nil, otherPage, "UIPanelButtonTemplate")
+enableClassButton:SetWidth(92)
+enableClassButton:SetHeight(22)
+enableClassButton:SetPoint("TOPRIGHT", otherPage, "TOPRIGHT", -112, -140)
+enableClassButton:SetText("Enable All")
+enableClassButton:SetScript("OnClick", function()
+  BNP:SetAllOtherDebuffsEnabled(true)
+  if BNP.RefreshOtherDebuffs then BNP:RefreshOtherDebuffs() end
+  if frame.RefreshOtherDebuffPage then frame:RefreshOtherDebuffPage() end
+end)
+
+local disableClassButton = CreateFrame("Button", nil, otherPage, "UIPanelButtonTemplate")
+disableClassButton:SetWidth(92)
+disableClassButton:SetHeight(22)
+disableClassButton:SetPoint("TOPRIGHT", otherPage, "TOPRIGHT", -14, -140)
+disableClassButton:SetText("Disable All")
+disableClassButton:SetScript("OnClick", function()
+  BNP:SetAllOtherDebuffsEnabled(false)
+  if BNP.RefreshOtherDebuffs then BNP:RefreshOtherDebuffs() end
+  if frame.RefreshOtherDebuffPage then frame:RefreshOtherDebuffPage() end
+end)
+
+frame.otherEnableClassButton = enableClassButton
+frame.otherDisableClassButton = disableClassButton
+frame.otherDebuffRows = {}
+
+for i = 1, 12 do
+  local row = CreateFrame("Frame", nil, otherPage)
+  row:SetWidth(405)
+  row:SetHeight(28)
+  row:SetPoint("TOPLEFT", otherPage, "TOPLEFT", 14, -174 - ((i - 1) * 29))
+
+  local icon = row:CreateTexture(nil, "ARTWORK")
+  icon:SetWidth(20)
+  icon:SetHeight(20)
+  icon:SetPoint("LEFT", row, "LEFT", 2, 0)
+  icon:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
+  row.BNPIcon = icon
+
+  local check = CreateFrame("CheckButton", nil, row, "UICheckButtonTemplate")
+  check:SetWidth(24)
+  check:SetHeight(24)
+  check:SetPoint("LEFT", icon, "RIGHT", 5, 0)
+  row.BNPCheck = check
+
+  local label = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+  label:SetPoint("LEFT", check, "RIGHT", 3, 0)
+  label:SetWidth(300)
+  label:SetJustifyH("LEFT")
+  row.BNPLabel = label
+
+  check:SetScript("OnClick", function()
+    if not this.BNPDebuffKey then return end
+    BNP:SetOtherDebuffSelected(this.BNPDebuffKey, this:GetChecked() and true or false)
+    if BNP.RefreshOtherDebuffs then BNP:RefreshOtherDebuffs() end
+  end)
+  check:SetScript("OnEnter", function()
+    local def = this.BNPDebuffDef
+    if not def then return end
+    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+    GameTooltip:SetText(def.label or def.key, 1, 0.82, 0)
+    if def.description then GameTooltip:AddLine(def.description, 1, 1, 1, true) end
+    GameTooltip:Show()
+  end)
+  check:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+  frame.otherDebuffRows[i] = row
+end
+
+local emptyClassNote = otherPage:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+emptyClassNote:SetPoint("TOPLEFT", otherPage, "TOPLEFT", 20, -184)
+emptyClassNote:SetWidth(380)
+emptyClassNote:SetJustifyH("LEFT")
+emptyClassNote:SetText("No shared Shaman debuffs are defined in the imported Cursive class list.")
+emptyClassNote:Hide()
+frame.otherEmptyClassNote = emptyClassNote
+
+function frame:RefreshOtherDebuffPage()
+  if self.otherDebuffsEnabledCheck then
+    self.otherDebuffsEnabledCheck:SetChecked(BNP.AreOtherDebuffsEnabled and BNP:AreOtherDebuffsEnabled() or false)
+  end
+
+  local selected = self.otherSelectedClass or "warrior"
+  local defs = BNP.OtherDebuffDefs and BNP.OtherDebuffDefs[selected] or nil
+  local selectedColor = classColors[selected] or { 1, 0.82, 0 }
+  if self.otherSelectedClassLabel then
+    self.otherSelectedClassLabel:SetText(classLabels[selected] or selected)
+    self.otherSelectedClassLabel:SetTextColor(selectedColor[1], selectedColor[2], selectedColor[3])
+  end
+
+  local classKey, tab
+  for classKey, tab in pairs(self.otherDebuffClassTabs or {}) do
+    local c = classColors[classKey] or { 0.6, 0.6, 0.6 }
+    if tab.BNPBG then
+      if classKey == selected then tab.BNPBG:SetTexture(c[1] * 0.55, c[2] * 0.55, c[3] * 0.55, 1)
+      else tab.BNPBG:SetTexture(c[1] * 0.4, c[2] * 0.4, c[3] * 0.4, 0.85) end
+    end
+  end
+
+  local count = defs and table.getn(defs) or 0
+  if self.otherEmptyClassNote then
+    if count == 0 then self.otherEmptyClassNote:Show() else self.otherEmptyClassNote:Hide() end
+  end
+
+  local rowIndex
+  for rowIndex = 1, table.getn(self.otherDebuffRows or {}) do
+    local row = self.otherDebuffRows[rowIndex]
+    local def = defs and defs[rowIndex] or nil
+    if def then
+      row.BNPDef = def
+      row.BNPCheck.BNPDebuffKey = def.key
+      row.BNPCheck.BNPDebuffDef = def
+      row.BNPCheck:SetChecked(BNP.IsOtherDebuffSelected and BNP:IsOtherDebuffSelected(def.key) or false)
+      row.BNPIcon:SetTexture(BNP.GetOtherDebuffTexture and BNP:GetOtherDebuffTexture(def) or "Interface\\Icons\\INV_Misc_QuestionMark")
+      row.BNPLabel:SetText(def.label or def.key)
+      row.BNPLabel:SetTextColor(selectedColor[1], selectedColor[2], selectedColor[3])
+      row:Show()
+    else
+      row.BNPDef = nil
+      row.BNPCheck.BNPDebuffKey = nil
+      row.BNPCheck.BNPDebuffDef = nil
+      row:Hide()
+    end
+  end
+end
+
+end
+
 function BNP:CreateOptions()
   if self.optionsFrame then return end
 
   local frame = CreateFrame("Frame", "BNPOptionsFrame", UIParent)
-  frame:SetWidth(430)
+  frame:SetWidth(470)
   frame:SetHeight(710)
   -- Keep the top edge in roughly the same place and add the extra room
   -- downward. The Icons page uses the height for Totems, Raid Marks and
@@ -684,17 +899,19 @@ function BNP:CreateOptions()
     totems = CreatePage(),
     castbar = CreatePage(),
     target = CreatePage(),
+    other = CreatePage(),
     tools = CreatePage(),
   }
   frame.tabs = {}
 
   local tabDefs = {
-    { key = "nameplates", label = "Nameplates", width = 76 },
-    { key = "auras", label = "Auras", width = 52 },
-    { key = "totems", label = "Icons", width = 58 },
-    { key = "castbar", label = "Castbar", width = 60 },
-    { key = "target", label = "Target", width = 56 },
-    { key = "tools", label = "Tools", width = 50 },
+    { key = "nameplates", label = "Nameplates", width = 72 },
+    { key = "auras", label = "Auras", width = 50 },
+    { key = "totems", label = "Icons", width = 52 },
+    { key = "castbar", label = "Castbar", width = 58 },
+    { key = "target", label = "Target", width = 54 },
+    { key = "other", label = "Other Debuffs", width = 84 },
+    { key = "tools", label = "Tools", width = 46 },
   }
 
   function frame:ShowTab(key)
@@ -718,9 +935,12 @@ function BNP:CreateOptions()
       end
     end
     self.selectedTab = key
+    if key == "other" and self.RefreshOtherDebuffPage then
+      self:RefreshOtherDebuffPage()
+    end
   end
 
-  local tabX = 28
+  local tabX = 15
   local i
   for i = 1, table.getn(tabDefs) do
     local def = tabDefs[i]
@@ -1740,6 +1960,21 @@ function BNP:CreateOptions()
   thickArrows:SetPoint("TOPLEFT", targetPage, "TOPLEFT", 204, -220)
   frame.targetArrowThickCheck = thickArrows
 
+  local targetOnlyNameplates = CreateCheck(targetPage, "Only Show Target", -250, function()
+    BNP_DB.targetOnlyNameplates = this:GetChecked() and true or false
+    if BNP.RefreshTargetOnlyNameplates then BNP:RefreshTargetOnlyNameplates() end
+    if frame.UpdateDependentControls then frame:UpdateDependentControls() end
+  end)
+  targetOnlyNameplates:SetScript("OnEnter", function()
+    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+    GameTooltip:SetText("Only Show Target", 1, 0.82, 0)
+    GameTooltip:AddLine("While a target is selected, hides every other nameplate by making it fully transparent.", 1, 1, 1, true)
+    GameTooltip:AddLine("With no target selected, all nameplates stay visible so you can still select one. Disabling this option immediately restores normal visibility.", 0.8, 0.8, 0.8, true)
+    GameTooltip:Show()
+  end)
+  targetOnlyNameplates:SetScript("OnLeave", function() GameTooltip:Hide() end)
+  frame.targetOnlyNameplatesCheck = targetOnlyNameplates
+
   -- Target border
   CreateSection(targetPage, "Target Border", -280)
 
@@ -1802,6 +2037,9 @@ function BNP:CreateOptions()
     if BNP.RefreshTargetScale then BNP:RefreshTargetScale() end
   end)
   frame.targetScaleSlider = targetScale
+
+  -- OTHER DEBUFFS TAB ------------------------------------------------------
+  BuildOtherDebuffsOptions(frame, frame.pages.other, CreateSection)
 
   -- TOOLS TAB --------------------------------------------------------------
   local toolsPage = frame.pages.tools
@@ -1971,6 +2209,12 @@ function BNP:CreateOptions()
     end
     SetCheckEnabled(self.targetArrowThickCheck, arrowsEnabled)
 
+    local targetOnlyEnabled = BNP.IsTargetOnlyNameplatesEnabled and BNP:IsTargetOnlyNameplatesEnabled() or false
+    if self.nonTargetAlphaSlider then
+      self.nonTargetAlphaSlider:SetAlpha(targetOnlyEnabled and 0.45 or 1.0)
+      if self.nonTargetAlphaSlider.EnableMouse then self.nonTargetAlphaSlider:EnableMouse(not targetOnlyEnabled) end
+    end
+
     local targetScaleEnabled = BNP.IsTargetScaleEnabled and BNP:IsTargetScaleEnabled() or false
     if self.targetScaleSlider then
       self.targetScaleSlider:SetAlpha(targetScaleEnabled and 1.0 or 0.45)
@@ -2109,6 +2353,8 @@ function BNP:SyncOptions()
   if frame.crowdControlCheck then frame.crowdControlCheck:SetChecked(self:AreCrowdControlEnabled()) end
   if frame.separateCCRowCheck then frame.separateCCRowCheck:SetChecked(self:IsSeparateCCRowEnabled()) end
   if frame.showOtherCCsCheck then frame.showOtherCCsCheck:SetChecked(self:ShowOtherPlayersCCs()) end
+  if frame.otherDebuffsEnabledCheck then frame.otherDebuffsEnabledCheck:SetChecked(self:AreOtherDebuffsEnabled()) end
+  if frame.RefreshOtherDebuffPage then frame:RefreshOtherDebuffPage() end
   if frame.pvpImmunitiesCheck then frame.pvpImmunitiesCheck:SetChecked(self:ArePvPImmunitiesEnabled()) end
   if frame.immunityPositionDropdown then
     local position = self:GetImmunityPosition()
@@ -2169,6 +2415,9 @@ function BNP:SyncOptions()
     UIDropDownMenu_SetText(labels[outline] or "Outline", frame.healthTextOutlineDropdown)
   end
   frame.targetFocusCheck:SetChecked(self:IsTargetFocusEnabled())
+  if frame.targetOnlyNameplatesCheck then
+    frame.targetOnlyNameplatesCheck:SetChecked(self.IsTargetOnlyNameplatesEnabled and self:IsTargetOnlyNameplatesEnabled() or false)
+  end
   if frame.targetBorderColorCheck then
     frame.targetBorderColorCheck:SetChecked(self.IsTargetBorderColorEnabled and self:IsTargetBorderColorEnabled() or false)
   end
