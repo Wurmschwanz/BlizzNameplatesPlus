@@ -12,11 +12,25 @@ local ICON_SPACING = 5
 local MAX_ICONS_PER_PLATE = 8
 
 local questObjectives = {}
+local questObjectiveKeys = {}
 local questIdCache = {}
+local questMonsterSourceCache = {}
+local questItemSourceCache = {}
+local cachedDependencyName = nil
 local questRevision = 0
-local updatePending = true
+local updatePending = false
 local updateDelay = 0.50
 local updateElapsed = 0
+local questRuntimeEnabled = false
+local questCallbacksRegistered = false
+local eventFrame
+local QuestRuntimeOnUpdate
+
+local QUEST_EVENTS = {
+  "QUEST_LOG_UPDATE",
+  "QUEST_WATCH_UPDATE",
+  "UNIT_QUEST_LOG_CHANGED",
+}
 
 local function ClearTable(tbl)
   local key
@@ -42,6 +56,21 @@ function BNP:GetQuestPlateDependencyName()
   if QuestieReady() then return "Questie-Octo" end
   if PfQuestReady() then return "pfQuest" end
   return nil
+end
+
+local function ResetQuestDataCaches()
+  ClearTable(questIdCache)
+  ClearTable(questMonsterSourceCache)
+  ClearTable(questItemSourceCache)
+end
+
+local function SyncQuestDataDependency()
+  local dependencyName = BNP:GetQuestPlateDependencyName()
+  if dependencyName ~= cachedDependencyName then
+    cachedDependencyName = dependencyName
+    ResetQuestDataCaches()
+  end
+  return dependencyName
 end
 
 local function GetQuestIdByTitle(title, level)
@@ -198,13 +227,21 @@ end
 
 local function GetItemDropSource(questId, itemName)
   if not questId or not itemName then return nil end
+
+  local wanted = Lower(itemName) or ""
+  local cacheKey = tostring(questId) .. "|" .. wanted
+  if questItemSourceCache[cacheKey] ~= nil then
+    return questItemSourceCache[cacheKey] or nil
+  end
+
   local mobs
   if QuestieReady() then mobs = GetDataFromQuestie(questId, itemName) end
-  if (not mobs or table.getn(mobs) == 0) and pfDB then
+  if (not mobs or table.getn(mobs) == 0) and PfQuestReady() then
     mobs = GetDataFromPfDb(questId, itemName)
   end
-  if mobs and table.getn(mobs) > 0 then return mobs end
-  return nil
+
+  questItemSourceCache[cacheKey] = (mobs and table.getn(mobs) > 0) and mobs or false
+  return questItemSourceCache[cacheKey] or nil
 end
 
 local function GetMonsterDataFromQuestie(questId)
@@ -248,6 +285,22 @@ local function GetMonsterDataFromPfDb(questId)
   return nil
 end
 
+local function GetMonsterSource(questId)
+  if not questId then return nil end
+  if questMonsterSourceCache[questId] ~= nil then
+    return questMonsterSourceCache[questId] or nil
+  end
+
+  local mobs
+  if QuestieReady() then mobs = GetMonsterDataFromQuestie(questId) end
+  if (not mobs or table.getn(mobs) == 0) and PfQuestReady() then
+    mobs = GetMonsterDataFromPfDb(questId)
+  end
+
+  questMonsterSourceCache[questId] = (mobs and table.getn(mobs) > 0) and mobs or false
+  return questMonsterSourceCache[questId] or nil
+end
+
 local function IsMobMatchObjective(mobName, objectiveName)
   local lm = Lower(mobName) or ""
   local lo = Lower(objectiveName) or ""
@@ -260,20 +313,55 @@ local function IsMobMatchObjective(mobName, objectiveName)
   return false
 end
 
-local function AddObjective(mobName, objectiveName, texture, remaining)
+local function AddObjective(target, mobName, objectiveName, texture, remaining)
   local key = Lower(mobName)
   if not key or key == "" then return end
-  if not questObjectives[key] then questObjectives[key] = {} end
-  questObjectives[key][objectiveName] = {
+  if not target[key] then target[key] = {} end
+  target[key][objectiveName] = {
     icon = texture,
     text = tostring(remaining),
   }
 end
 
+local function BuildObjectiveKey(objectives)
+  if not objectives then return "" end
+  local parts = {}
+  local objectiveName, data
+  for objectiveName, data in pairs(objectives) do
+    table.insert(parts, tostring(objectiveName) .. "=" .. tostring(data.icon or "") .. ":" .. tostring(data.text or ""))
+  end
+  table.sort(parts)
+  return table.concat(parts, "|")
+end
+
+local function BuildObjectiveKeys(objectives)
+  local keys = {}
+  local mobKey, mobObjectives
+  for mobKey, mobObjectives in pairs(objectives) do
+    keys[mobKey] = BuildObjectiveKey(mobObjectives)
+  end
+  return keys
+end
+
+local function FindChangedObjectiveKeys(oldKeys, newKeys)
+  local changed = {}
+  local key, value
+  for key, value in pairs(oldKeys) do
+    if newKeys[key] ~= value then changed[key] = true end
+  end
+  for key, value in pairs(newKeys) do
+    if oldKeys[key] ~= value then changed[key] = true end
+  end
+  return changed
+end
+
 function BNP:UpdateQuestPlateObjectives()
-  ClearTable(questObjectives)
-  -- A dependency may have become ready after an earlier negative lookup.
-  ClearTable(questIdCache)
+  if not questRuntimeEnabled or not self:AreQuestPlateIndicatorsEnabled() then return end
+
+  -- Quest IDs and source mappings are static. Keep them cached between
+  -- QUEST_LOG_UPDATE events; only invalidate if the backing dependency changes.
+  SyncQuestDataDependency()
+  local nextObjectives = {}
 
   local oldSelection
   if GetQuestLogSelection then oldSelection = GetQuestLogSelection() end
@@ -307,10 +395,7 @@ function BNP:UpdateQuestPlateObjectives()
             local texture
 
             if objectiveType == "monster" then
-              if questId and QuestieReady() then mobs = GetMonsterDataFromQuestie(questId) end
-              if (not mobs or table.getn(mobs) == 0) and questId and pfDB then
-                mobs = GetMonsterDataFromPfDb(questId)
-              end
+              if questId then mobs = GetMonsterSource(questId) end
 
               if mobs and monsterCount > 1 then
                 local filtered = {}
@@ -336,7 +421,7 @@ function BNP:UpdateQuestPlateObjectives()
             if mobs and texture then
               local _, mobName
               for _, mobName in pairs(mobs) do
-                AddObjective(mobName, objectiveName, texture, total - current)
+                AddObjective(nextObjectives, mobName, objectiveName, texture, total - current)
               end
             end
           end
@@ -349,8 +434,16 @@ function BNP:UpdateQuestPlateObjectives()
     SelectQuestLogEntry(oldSelection)
   end
 
+  local nextObjectiveKeys = BuildObjectiveKeys(nextObjectives)
+  local changedKeys = FindChangedObjectiveKeys(questObjectiveKeys, nextObjectiveKeys)
+
+  questObjectives = nextObjectives
+  questObjectiveKeys = nextObjectiveKeys
   questRevision = questRevision + 1
-  if self.RefreshQuestPlateIndicators then self:RefreshQuestPlateIndicators() end
+
+  -- Only touch nameplates whose objective display actually changed. A kill or
+  -- loot event normally affects one mob type, not every visible nameplate.
+  if self.RefreshQuestPlateIndicators then self:RefreshQuestPlateIndicators(changedKeys) end
 end
 
 local function HideQuestIcons(plate)
@@ -404,7 +497,8 @@ function BNP:UpdateQuestPlateIndicator(plate, force)
   local size = self:GetQuestPlateIconSize()
   local x = self:GetQuestPlateXOffset()
   local y = self:GetQuestPlateYOffset()
-  local renderKey = tostring(questRevision) .. "|" .. tostring(unitName) .. "|" ..
+  local objectiveKey = questObjectiveKeys[Lower(unitName)] or ""
+  local renderKey = tostring(objectiveKey) .. "|" .. tostring(unitName) .. "|" ..
                     tostring(size) .. "|" .. tostring(x) .. "|" .. tostring(y)
   if not force and plate.BNPQuestRenderKey == renderKey then return end
   plate.BNPQuestRenderKey = renderKey
@@ -448,50 +542,138 @@ function BNP:UpdateQuestPlateIndicator(plate, force)
   end
 end
 
-function BNP:RefreshQuestPlateIndicators()
+function BNP:RefreshQuestPlateIndicators(changedKeys)
   local plate
   for plate in pairs(self.plates or {}) do
-    if plate and plate.IsShown and plate:IsShown() then
-      self:UpdateQuestPlateIndicator(plate, true)
-    else
-      HideQuestIcons(plate)
+    local shouldUpdate = true
+    if changedKeys then
+      local nameRegion = plate and plate.name
+      local unitName = nameRegion and nameRegion.GetText and nameRegion:GetText()
+      local mobKey = unitName and Lower(unitName) or nil
+      shouldUpdate = mobKey and changedKeys[mobKey]
+    end
+
+    if shouldUpdate then
+      if plate and plate.IsShown and plate:IsShown() then
+        self:UpdateQuestPlateIndicator(plate, true)
+      else
+        HideQuestIcons(plate)
+      end
     end
   end
 end
 
 function BNP:RequestQuestPlateObjectiveUpdate()
+  if not questRuntimeEnabled or not self:AreQuestPlateIndicatorsEnabled() then return end
   updatePending = true
   updateElapsed = 0
 end
 
--- Nameplate integration: reuse BNP's existing 10 Hz plate update rather than
--- scanning WorldFrame a second time just for quest icons.
-table.insert(BNP.libnameplate.OnShow, function(plate)
+local function SetQuestEventsRegistered(enabled)
+  if not eventFrame then return end
+  local i
+  for i = 1, table.getn(QUEST_EVENTS) do
+    if enabled then
+      eventFrame:RegisterEvent(QUEST_EVENTS[i])
+    else
+      eventFrame:UnregisterEvent(QUEST_EVENTS[i])
+    end
+  end
+end
+
+local function RemoveCallback(list, callback)
+  local i
+  for i = table.getn(list), 1, -1 do
+    if list[i] == callback then
+      table.remove(list, i)
+    end
+  end
+end
+
+local QuestPlateOnShow = function(plate)
   plate.BNPQuestRenderKey = nil
   BNP:UpdateQuestPlateIndicator(plate, true)
-end)
+end
 
-table.insert(BNP.libnameplate.OnUpdate, function(plate)
+local QuestPlateOnUpdate = function(plate)
   BNP:UpdateQuestPlateIndicator(plate, false)
-end)
+end
 
-local eventFrame = CreateFrame("Frame")
-eventFrame:RegisterEvent("VARIABLES_LOADED")
-eventFrame:RegisterEvent("PLAYER_LOGIN")
-eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
-eventFrame:RegisterEvent("QUEST_LOG_UPDATE")
-eventFrame:RegisterEvent("QUEST_WATCH_UPDATE")
-eventFrame:RegisterEvent("UNIT_QUEST_LOG_CHANGED")
+local function SetQuestNameplateCallbacksRegistered(enabled)
+  if enabled and not questCallbacksRegistered then
+    table.insert(BNP.libnameplate.OnShow, QuestPlateOnShow)
+    table.insert(BNP.libnameplate.OnUpdate, QuestPlateOnUpdate)
+    questCallbacksRegistered = true
+  elseif not enabled and questCallbacksRegistered then
+    RemoveCallback(BNP.libnameplate.OnShow, QuestPlateOnShow)
+    RemoveCallback(BNP.libnameplate.OnUpdate, QuestPlateOnUpdate)
+    questCallbacksRegistered = false
+  end
+end
 
-eventFrame:SetScript("OnEvent", function()
-  BNP:RequestQuestPlateObjectiveUpdate()
-end)
+function BNP:SetQuestPlateRuntimeEnabled(enabled, rebuild)
+  enabled = enabled and true or false
 
-eventFrame:SetScript("OnUpdate", function()
+  if questRuntimeEnabled ~= enabled then
+    questRuntimeEnabled = enabled
+    SetQuestEventsRegistered(enabled)
+    SetQuestNameplateCallbacksRegistered(enabled)
+    if eventFrame then
+      eventFrame:SetScript("OnUpdate", enabled and QuestRuntimeOnUpdate or nil)
+    end
+  end
+
+  if enabled then
+    if rebuild then
+      ClearTable(questObjectives)
+      ClearTable(questObjectiveKeys)
+      cachedDependencyName = nil
+      ResetQuestDataCaches()
+      questRevision = questRevision + 1
+    end
+    self:RequestQuestPlateObjectiveUpdate()
+    if self.RefreshQuestPlateIndicators then self:RefreshQuestPlateIndicators() end
+  else
+    updatePending = false
+    updateElapsed = 0
+    ClearTable(questObjectives)
+    ClearTable(questObjectiveKeys)
+    cachedDependencyName = nil
+    ResetQuestDataCaches()
+    questRevision = questRevision + 1
+    if self.RefreshQuestPlateIndicators then self:RefreshQuestPlateIndicators() end
+  end
+end
+
+function BNP:SyncQuestPlateRuntime(rebuild)
+  self:SetQuestPlateRuntimeEnabled(self:AreQuestPlateIndicatorsEnabled(), rebuild)
+end
+
+QuestRuntimeOnUpdate = function()
   if not updatePending then return end
   updateElapsed = updateElapsed + arg1
   if updateElapsed < updateDelay then return end
   updatePending = false
   updateElapsed = 0
   BNP:UpdateQuestPlateObjectives()
+end
+
+eventFrame = CreateFrame("Frame")
+eventFrame:RegisterEvent("VARIABLES_LOADED")
+eventFrame:RegisterEvent("PLAYER_LOGIN")
+eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+
+eventFrame:SetScript("OnEvent", function()
+  if event == "VARIABLES_LOADED" or event == "PLAYER_LOGIN" or event == "PLAYER_ENTERING_WORLD" then
+    if BNP:AreQuestPlateIndicatorsEnabled() then
+      BNP:SetQuestPlateRuntimeEnabled(true, true)
+    elseif questRuntimeEnabled then
+      BNP:SetQuestPlateRuntimeEnabled(false, false)
+    end
+    return
+  end
+
+  if questRuntimeEnabled then
+    BNP:RequestQuestPlateObjectiveUpdate()
+  end
 end)

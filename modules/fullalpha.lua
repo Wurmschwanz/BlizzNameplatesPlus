@@ -1003,33 +1003,54 @@ end
 local targetEvents = CreateFrame("Frame")
 targetEvents:RegisterEvent("PLAYER_TARGET_CHANGED")
 targetEvents:SetScript("OnEvent", function()
+  -- Target switches used to synchronously walk every known nameplate here.
+  -- Every visible plate already runs ApplyTargetAlpha/target visuals from its
+  -- normal OnUpdate, so that extra full pass duplicated the same work in one
+  -- event frame and could show up as a short hitch in crowded scenes.
+  --
+  -- Keep the switch responsive by refreshing only the old/new target frames
+  -- immediately. All other plates converge on the very next normal OnUpdate
+  -- without one large target-change CPU spike. Alpha-zero Target Only plates
+  -- remain :IsShown(), so their OnUpdate continues to run as well.
+  local previousTargetPlate = strictTargetCachePlate or classicTargetCachePlate
+
   InvalidateTargetResolution()
 
   local targetGUID = GetTargetGUID()
-  local _, classicTargetAvailable = GetClassicAPITargetPlate(targetGUID)
-  local holdUntil = GetTime() + ALPHA_IDENTITY_HOLD_TIME
-  local plate
-  local targetOnly = BNP.IsTargetOnlyNameplatesEnabled and
-                     BNP:IsTargetOnlyNameplatesEnabled()
-  for plate in pairs(BNP.plates or {}) do
-    if classicTargetAvailable or targetOnly then
-      -- Target Only is intentionally fail-closed and therefore does not use
-      -- the legacy full-alpha identity hold during target switches.
-      plate.BNPAlphaIdentityHoldUntil = nil
-      ApplyTargetAlpha(plate)
-      if BNP.MaintainTargetScale then BNP:MaintainTargetScale(plate) end
-    else
-      plate.BNPAlphaIdentityHoldUntil = holdUntil
-      if plate.GetAlpha and plate.SetAlpha and plate:GetAlpha() ~= 1 then
-        plate:SetAlpha(1)
-      end
-    end
-    ApplyTargetFrameLevel(plate)
-    ApplyTargetArrows(plate)
-    ApplyTargetBorderColor(plate)
+  local currentTargetPlate, classicTargetAvailable = GetClassicAPITargetPlate(targetGUID)
+  if not currentTargetPlate then
+    currentTargetPlate = GetStrictTargetPlate(targetGUID)
   end
 
-  if BNP.RefreshAuraPriorityAlpha then BNP:RefreshAuraPriorityAlpha() end
+  local function RefreshImmediateTargetPlate(plate)
+    if not plate or not BNP.plates or not BNP.plates[plate] then return end
+    if not plate.IsShown or not plate:IsShown() then return end
+
+    -- Exact ClassicAPI target identity means no transition hold is needed.
+    -- On the legacy path preserve the old neutral hold for the former target
+    -- while projected SuperWoW identity settles.
+    if classicTargetAvailable or
+       (BNP.IsTargetOnlyNameplatesEnabled and BNP:IsTargetOnlyNameplatesEnabled()) then
+      plate.BNPAlphaIdentityHoldUntil = nil
+    else
+      plate.BNPAlphaIdentityHoldUntil = GetTime() + ALPHA_IDENTITY_HOLD_TIME
+    end
+
+    ApplyTargetAlpha(plate)
+    if BNP.MaintainTargetScale then BNP:MaintainTargetScale(plate) end
+    ApplyTargetGlow(plate)
+    ApplyTargetArrows(plate)
+    ApplyTargetBorderColor(plate)
+    ApplyTargetFrameLevel(plate)
+  end
+
+  RefreshImmediateTargetPlate(previousTargetPlate)
+  if currentTargetPlate ~= previousTargetPlate then
+    RefreshImmediateTargetPlate(currentTargetPlate)
+  end
+
+  -- Aura/CC containers already mirror plate alpha from ApplyTargetAlpha and
+  -- their own renderer refresh. Avoid another synchronous all-plate pass here.
 end)
 
 function BNP:RefreshTargetFocus()

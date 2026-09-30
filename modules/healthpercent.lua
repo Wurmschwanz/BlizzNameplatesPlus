@@ -252,11 +252,11 @@ if BNP.libnameplate then
   end)
 end
 
--- Target switches can change nameplate frame levels in the same frame. Because
--- the text now belongs to the healthbar this is only a value/visibility refresh,
--- not a layering workaround.
+-- Health text is parented directly to the healthbar and therefore follows
+-- target frame-level changes automatically. PLAYER_TARGET_CHANGED used to
+-- force a synchronous refresh of every plate even though no health value had
+-- changed; the regular 0.10s bucketed updater already keeps values current.
 local healthEvents = CreateFrame("Frame")
-healthEvents:RegisterEvent("PLAYER_TARGET_CHANGED")
 healthEvents:RegisterEvent("PLAYER_ENTERING_WORLD")
 healthEvents:SetScript("OnEvent", function()
   if BNP.RefreshHealthPercent then

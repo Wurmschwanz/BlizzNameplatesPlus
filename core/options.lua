@@ -1658,10 +1658,14 @@ function BNP:CreateOptions()
 
   local questPlateIndicators = CreateCheck(totemsPage, "Enable Quest Icons", -368, function()
     BNP_DB.questPlateIndicators = this:GetChecked() and true or false
-    if BNP.RequestQuestPlateObjectiveUpdate and BNP_DB.questPlateIndicators then
-      BNP:RequestQuestPlateObjectiveUpdate()
+    if BNP.SetQuestPlateRuntimeEnabled then
+      BNP:SetQuestPlateRuntimeEnabled(BNP_DB.questPlateIndicators, true)
+    else
+      if BNP_DB.questPlateIndicators and BNP.RequestQuestPlateObjectiveUpdate then
+        BNP:RequestQuestPlateObjectiveUpdate()
+      end
+      if BNP.RefreshQuestPlateIndicators then BNP:RefreshQuestPlateIndicators() end
     end
-    if BNP.RefreshQuestPlateIndicators then BNP:RefreshQuestPlateIndicators() end
     if frame.UpdateDependentControls then frame:UpdateDependentControls() end
   end)
   frame.questPlateIndicatorsCheck = questPlateIndicators
