@@ -134,6 +134,14 @@ BNP.WarlockAuras = {
     spellIDs = { 6789, 17925, 17926 },
   },
   {
+    key = "shadowburn",
+    names = { "Shadowburn", "Schattenbrand" },
+    texture = "Interface\\Icons\\Spell_Shadow_ScourgeBuild",
+    textureMatch = "scourgebuild",
+    duration = 5,
+    spellIDs = { 17877, 18867, 18868, 18869, 18870, 18871 },
+  },
+  {
     key = "drain_life",
     channel = true,
     names = { "Drain Life", "Blutsauger" },

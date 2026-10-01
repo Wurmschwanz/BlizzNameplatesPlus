@@ -1388,8 +1388,8 @@ local STRICT_AURA_KEYS = {
   -- Shared / proc / secondary effects
   shadow_vulnerability=true, hunters_mark=true,
 
-  -- Warlock CC
-  fear=true, howl_of_terror=true, banish=true, death_coil=true,
+  -- Warlock CC / aura-confirmed utility effects
+  fear=true, howl_of_terror=true, banish=true, death_coil=true, shadowburn=true,
 
   -- Hunter traps / CC / talent procs
   immolation_trap_effect=true, explosive_trap_effect=true, freezing_trap_effect=true,
