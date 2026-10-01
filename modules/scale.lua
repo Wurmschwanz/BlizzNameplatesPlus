@@ -179,10 +179,23 @@ end
 -- receives a real "mouseover" unit even though clicks are forwarded to the
 -- original Blizzard nameplate.
 local function GetPlateMouseoverUnit(plate)
-  if not plate or not plate.GetName then return nil end
+  if not plate then return nil end
 
+  -- Prefer ClassicAPI's exact nameplateN token when it is available.  Besides
+  -- being stable for the lifetime of the projected plate, this is a normal
+  -- unit token and gives GameTooltip the same reaction/hostility information
+  -- it receives from Blizzard unit frames.
+  local classicToken = plate.BNPClassicUnitToken
+  if classicToken and UnitExists then
+    local existsOK, exists = pcall(UnitExists, classicToken)
+    if existsOK and exists then return classicToken end
+  end
+
+  -- SuperWoW fallback: frame:GetName(1) returns the GUID attached to the
+  -- nameplate. SuperWoW extends unit-taking functions to accept that GUID.
+  if not plate.GetName then return nil end
   local ok, unit = pcall(function() return plate:GetName(1) end)
-  if not ok or not unit then return nil end
+  if not ok or not unit or unit == "" then return nil end
 
   if UnitExists then
     local existsOK, exists = pcall(UnitExists, unit)
@@ -195,17 +208,23 @@ end
 local function ShowPlateTooltip(wrapper, unit)
   if not wrapper or not unit or not GameTooltip or not GameTooltip.SetUnit then return end
 
-  -- SetMouseoverUnit() has already made "mouseover" a valid unit.  Prefer
-  -- that token so tooltip addons see the same unit surface as mouseover macros.
   if GameTooltip_SetDefaultAnchor then
     GameTooltip_SetDefaultAnchor(GameTooltip, wrapper)
   elseif GameTooltip.SetOwner then
     GameTooltip:SetOwner(wrapper, "ANCHOR_CURSOR")
   end
 
-  local ok = pcall(function() GameTooltip:SetUnit("mouseover") end)
+  -- Do NOT build the tooltip from the synthetic "mouseover" token.
+  -- SetMouseoverUnit() is still required for mouseover macros/addons, but on
+  -- some SuperWoW/ClassicAPI combinations the synthetic token can briefly
+  -- expose stale reaction data.  That is visible as a hostile NPC name
+  -- flickering between yellow and red in GameTooltip.  Feed GameTooltip the
+  -- exact plate unit instead (nameplateN when possible, GUID otherwise), just
+  -- like established custom unit-frame implementations do.
+  local ok = pcall(function() GameTooltip:SetUnit(unit) end)
   if not ok then
-    pcall(function() GameTooltip:SetUnit(unit) end)
+    -- Compatibility fallback for older clients that cannot tooltip a GUID.
+    pcall(function() GameTooltip:SetUnit("mouseover") end)
   end
 
   if GameTooltip.Show then GameTooltip:Show() end

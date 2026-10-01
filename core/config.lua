@@ -79,6 +79,14 @@ BNP.defaults = BNP.defaults or {
   questPlateIconSize = 16,
   questPlateXOffset = 10,
   questPlateYOffset = -7,
+  personalNameplate = false,
+  personalNameplateCombatOnly = true,
+  personalNameplateClassColor = false,
+  personalNameplateHealthText = "both",
+  personalNameplateDebuffs = false,
+  personalNameplateDebuffYOffset = 0,
+  personalNameplateScale = 1.0,
+  personalNameplateYOffset = -90,
 }
 
 function BNP:InitConfig()
@@ -236,6 +244,14 @@ function BNP:InitConfig()
   if BNP_DB.questPlateIconSize == nil then BNP_DB.questPlateIconSize = self.defaults.questPlateIconSize end
   if BNP_DB.questPlateXOffset == nil then BNP_DB.questPlateXOffset = self.defaults.questPlateXOffset end
   if BNP_DB.questPlateYOffset == nil then BNP_DB.questPlateYOffset = self.defaults.questPlateYOffset end
+  if BNP_DB.personalNameplate == nil then BNP_DB.personalNameplate = self.defaults.personalNameplate end
+  if BNP_DB.personalNameplateCombatOnly == nil then BNP_DB.personalNameplateCombatOnly = self.defaults.personalNameplateCombatOnly end
+  if BNP_DB.personalNameplateClassColor == nil then BNP_DB.personalNameplateClassColor = self.defaults.personalNameplateClassColor end
+  if BNP_DB.personalNameplateHealthText == nil then BNP_DB.personalNameplateHealthText = self.defaults.personalNameplateHealthText end
+  if BNP_DB.personalNameplateDebuffs == nil then BNP_DB.personalNameplateDebuffs = self.defaults.personalNameplateDebuffs end
+  if BNP_DB.personalNameplateDebuffYOffset == nil then BNP_DB.personalNameplateDebuffYOffset = self.defaults.personalNameplateDebuffYOffset end
+  if BNP_DB.personalNameplateScale == nil then BNP_DB.personalNameplateScale = self.defaults.personalNameplateScale end
+  if BNP_DB.personalNameplateYOffset == nil then BNP_DB.personalNameplateYOffset = self.defaults.personalNameplateYOffset end
 end
 
 function BNP:GetNameplateScale()
@@ -698,6 +714,54 @@ end
 
 
 
+
+function BNP:IsPersonalNameplateEnabled()
+  return BNP_DB and BNP_DB.personalNameplate == true
+end
+
+function BNP:IsPersonalNameplateCombatOnly()
+  return not BNP_DB or BNP_DB.personalNameplateCombatOnly ~= false
+end
+
+
+function BNP:IsPersonalNameplateClassColorEnabled()
+  return BNP_DB and BNP_DB.personalNameplateClassColor == true
+end
+
+function BNP:GetPersonalNameplateHealthTextMode()
+  local mode = (BNP_DB and BNP_DB.personalNameplateHealthText) or self.defaults.personalNameplateHealthText or "both"
+  if mode ~= "off" and mode ~= "percent" and mode ~= "hp" and mode ~= "both" then
+    mode = "both"
+  end
+  return mode
+end
+
+function BNP:IsPersonalNameplateDebuffsEnabled()
+  return BNP_DB and BNP_DB.personalNameplateDebuffs == true
+end
+
+function BNP:GetPersonalNameplateDebuffYOffset()
+  local value = (BNP_DB and tonumber(BNP_DB.personalNameplateDebuffYOffset)) or self.defaults.personalNameplateDebuffYOffset or 0
+  if value < -50 then value = -50 end
+  if value > 50 then value = 50 end
+  if value >= 0 then return math.floor(value + 0.5) end
+  return math.ceil(value - 0.5)
+end
+
+function BNP:GetPersonalNameplateScale()
+  local value = (BNP_DB and tonumber(BNP_DB.personalNameplateScale)) or self.defaults.personalNameplateScale or 1.0
+  if value < 0.70 then value = 0.70 end
+  if value > 1.50 then value = 1.50 end
+  return value
+end
+
+function BNP:GetPersonalNameplateYOffset()
+  local value = (BNP_DB and tonumber(BNP_DB.personalNameplateYOffset)) or self.defaults.personalNameplateYOffset or -90
+  if value < -250 then value = -250 end
+  if value > 150 then value = 150 end
+  if value >= 0 then return math.floor(value + 0.5) end
+  return math.ceil(value - 0.5)
+end
 
 function BNP:AreQuestPlateIndicatorsEnabled()
   return not BNP_DB or BNP_DB.questPlateIndicators ~= false

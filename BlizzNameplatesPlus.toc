@@ -44,5 +44,6 @@ modules\castbar.lua
 modules\guiddebug.lua
 modules\tankmode.lua
 modules\healthpercent.lua
+modules\personalnameplate.lua
 modules\combopoints.lua
 modules\commands.lua

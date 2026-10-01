@@ -174,6 +174,7 @@ function BNP:RefreshNameplateBorderStyle()
   if self.RefreshEliteDragonVisibility then
     self:RefreshEliteDragonVisibility()
   end
+  if self.RefreshPersonalNameplateStyle then self:RefreshPersonalNameplateStyle() end
 end
 
 function BNP:RefreshNameplateLevelVisibility()
@@ -185,6 +186,7 @@ function BNP:RefreshNameplateLevelVisibility()
       if BNP.RefreshImmunityLayoutForPlate then BNP:RefreshImmunityLayoutForPlate(plate) end
     end
   end
+  if self.RefreshPersonalNameplateStyle then self:RefreshPersonalNameplateStyle() end
 end
 
 function BNP:RefreshHealthbarBackground()
@@ -192,6 +194,7 @@ function BNP:RefreshHealthbarBackground()
   for plate in pairs(BNP.plates or {}) do
     ApplyHealthbarBackground(plate)
   end
+  if self.RefreshPersonalNameplateStyle then self:RefreshPersonalNameplateStyle() end
 end
 
 if BNP.libnameplate then

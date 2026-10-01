@@ -168,6 +168,7 @@ function BNP:RefreshClassColors()
       end
     end
   end
+  if self.RefreshPersonalNameplateStyle then self:RefreshPersonalNameplateStyle() end
 end
 
 local function EnforceClassColor(plate)
