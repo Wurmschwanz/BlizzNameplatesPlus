@@ -518,7 +518,53 @@ local function ShouldShow()
   return inCombat or OptionsPreviewActive()
 end
 
+local events = CreateFrame("Frame")
+local updater = CreateFrame("Frame")
+local runtimeEnabled = false
+local RuntimeOnUpdate
+
+local runtimeEvents = {
+  "PLAYER_ENTERING_WORLD",
+  "PLAYER_REGEN_DISABLED",
+  "PLAYER_REGEN_ENABLED",
+  "UNIT_HEALTH",
+  "UNIT_MANA",
+  "UNIT_AURA",
+  "PLAYER_LEVEL_UP",
+}
+
+local function SetRuntimeEnabled(enabled)
+  enabled = enabled and true or false
+  if enabled == runtimeEnabled then return end
+  runtimeEnabled = enabled
+
+  local i
+  if enabled then
+    for i = 1, table.getn(runtimeEvents) do
+      events:RegisterEvent(runtimeEvents[i])
+    end
+    updater:SetScript("OnUpdate", RuntimeOnUpdate)
+  else
+    for i = 1, table.getn(runtimeEvents) do
+      events:UnregisterEvent(runtimeEvents[i])
+    end
+    updater:SetScript("OnUpdate", nil)
+    updateElapsed = 0
+    debuffScanElapsed = 0
+    if personalFrame then personalFrame:Hide() end
+  end
+end
+
 local function Refresh()
+  local enabled = BNP.IsPersonalNameplateEnabled and BNP:IsPersonalNameplateEnabled()
+  if not enabled then
+    SetRuntimeEnabled(false)
+    if personalFrame then personalFrame:Hide() end
+    return
+  end
+
+  SetRuntimeEnabled(true)
+
   local frame = CreatePersonalFrame()
   UpdatePosition(frame)
   UpdateStyle(frame)
@@ -537,22 +583,22 @@ function BNP:RefreshPersonalNameplate()
 end
 
 function BNP:RefreshPersonalNameplateStyle()
+  if not (BNP.IsPersonalNameplateEnabled and BNP:IsPersonalNameplateEnabled()) then return end
   if not personalFrame then return end
   UpdateStyle(personalFrame)
   UpdateValues(personalFrame)
   if personalFrame:IsShown() then UpdatePersonalDebuffs(personalFrame, true) end
 end
 
-local events = CreateFrame("Frame")
-events:RegisterEvent("PLAYER_ENTERING_WORLD")
-events:RegisterEvent("PLAYER_REGEN_DISABLED")
-events:RegisterEvent("PLAYER_REGEN_ENABLED")
-events:RegisterEvent("UNIT_HEALTH")
-events:RegisterEvent("UNIT_MANA")
-events:RegisterEvent("UNIT_AURA")
-events:RegisterEvent("PLAYER_LEVEL_UP")
-
 events:SetScript("OnEvent", function()
+  if event == "VARIABLES_LOADED" then
+    events:UnregisterEvent("VARIABLES_LOADED")
+    Refresh()
+    return
+  end
+
+  if not runtimeEnabled then return end
+
   if event == "PLAYER_REGEN_DISABLED" then
     inCombat = true
     Refresh()
@@ -582,8 +628,7 @@ events:SetScript("OnEvent", function()
   end
 end)
 
-local updater = CreateFrame("Frame")
-updater:SetScript("OnUpdate", function()
+RuntimeOnUpdate = function()
   updateElapsed = updateElapsed + arg1
   if updateElapsed < 0.10 then return end
   updateElapsed = 0
@@ -591,7 +636,8 @@ updater:SetScript("OnUpdate", function()
   if not personalFrame then return end
 
   -- Cheap 10 Hz fallback for custom 1.12 clients that do not emit every modern
-  -- player-resource event consistently. It only runs value work while visible.
+  -- player-resource event consistently. This script is attached only while the
+  -- Personal Nameplate feature itself is enabled.
   local shouldShow = ShouldShow()
   if shouldShow then
     if not personalFrame:IsShown() then
@@ -610,4 +656,9 @@ updater:SetScript("OnUpdate", function()
   elseif personalFrame:IsShown() then
     personalFrame:Hide()
   end
-end)
+end
+
+-- Bootstrap once SavedVariables are available. If the feature is disabled,
+-- this event removes itself and no Personal Nameplate runtime events or
+-- OnUpdate polling stay active in the background.
+events:RegisterEvent("VARIABLES_LOADED")
