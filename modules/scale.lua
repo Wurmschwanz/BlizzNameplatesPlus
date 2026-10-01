@@ -178,24 +178,88 @@ end
 -- wrapper owns the mouse hit area, so without this bridge the client never
 -- receives a real "mouseover" unit even though clicks are forwarded to the
 -- original Blizzard nameplate.
+local function GetProjectedPlateUnit(plate)
+  if not plate or not plate.GetName then return nil end
+  local ok, unit = pcall(function() return plate:GetName(1) end)
+  if not ok or not unit or unit == "" then return nil end
+  return unit
+end
+
+local function UnitGUIDSafe(unit)
+  local guidFn = BNP._ClassicUnitGUID or UnitGUID
+  if not guidFn or not unit then return nil end
+  local ok, guid = pcall(guidFn, unit)
+  if ok then return guid end
+  return nil
+end
+
+local function FindExactClassicPlateToken(plate)
+  if not plate or not UnitExists then return nil end
+
+  -- Do not trust a cached nameplateN token blindly. Nameplate frames are
+  -- recycled and NAME_PLATE_UNIT_REMOVED / ADDED can land around the same
+  -- frame that the cursor enters a reused plate. Resolve the CURRENT mapping
+  -- on demand. This work only happens on mouse enter, never in the background.
+  local getPlate = BNP._ClassicGetNamePlateForUnit
+  if not getPlate and C_NamePlate then
+    getPlate = C_NamePlate.GetNamePlateForUnit
+  end
+
+  if getPlate then
+    local projected = GetProjectedPlateUnit(plate)
+    local projectedGUID = UnitGUIDSafe(projected) or projected
+    local i
+    for i = 1, 40 do
+      local token = "nameplate" .. i
+      local existsOK, exists = pcall(UnitExists, token)
+      if existsOK and exists then
+        local mapOK, mappedPlate = pcall(getPlate, token)
+        if mapOK and mappedPlate == plate then
+          local tokenGUID = UnitGUIDSafe(token)
+          if not projectedGUID or not tokenGUID or tokenGUID == projectedGUID then
+            plate.BNPClassicUnitToken = token
+            if tokenGUID then plate.BNPClassicGUID = tokenGUID end
+            return token
+          end
+        end
+      end
+    end
+  end
+
+  -- Older ClassicAPI fallback: a cached token is still usable, but verify its
+  -- GUID against the unit currently attached to the SuperWoW nameplate first.
+  local cached = plate.BNPClassicUnitToken
+  if cached then
+    local existsOK, exists = pcall(UnitExists, cached)
+    if existsOK and exists then
+      local projected = GetProjectedPlateUnit(plate)
+      local projectedGUID = UnitGUIDSafe(projected) or projected
+      local cachedGUID = UnitGUIDSafe(cached)
+      if not projectedGUID or not cachedGUID or cachedGUID == projectedGUID then
+        return cached
+      end
+    end
+
+    -- Never carry a proven stale token into GameTooltip.
+    plate.BNPClassicUnitToken = nil
+    plate.BNPClassicGUID = nil
+  end
+
+  return nil
+end
+
 local function GetPlateMouseoverUnit(plate)
   if not plate then return nil end
 
-  -- Prefer ClassicAPI's exact nameplateN token when it is available.  Besides
-  -- being stable for the lifetime of the projected plate, this is a normal
-  -- unit token and gives GameTooltip the same reaction/hostility information
-  -- it receives from Blizzard unit frames.
-  local classicToken = plate.BNPClassicUnitToken
-  if classicToken and UnitExists then
-    local existsOK, exists = pcall(UnitExists, classicToken)
-    if existsOK and exists then return classicToken end
-  end
+  -- Prefer a freshly resolved ClassicAPI nameplateN token. It carries the
+  -- cleanest reaction data for GameTooltip and avoids recycled-token races.
+  local classicToken = FindExactClassicPlateToken(plate)
+  if classicToken then return classicToken end
 
   -- SuperWoW fallback: frame:GetName(1) returns the GUID attached to the
   -- nameplate. SuperWoW extends unit-taking functions to accept that GUID.
-  if not plate.GetName then return nil end
-  local ok, unit = pcall(function() return plate:GetName(1) end)
-  if not ok or not unit or unit == "" then return nil end
+  local unit = GetProjectedPlateUnit(plate)
+  if not unit then return nil end
 
   if UnitExists then
     local existsOK, exists = pcall(UnitExists, unit)
@@ -203,6 +267,39 @@ local function GetPlateMouseoverUnit(plate)
   end
 
   return unit
+end
+
+local function ForceTooltipNPCReactionColor(unit)
+  if not unit or not UnitReaction then return end
+
+  -- Leave player tooltip coloring alone (class/faction/PvP coloring belongs to
+  -- Blizzard). The reported bug is NPC reaction color only.
+  if UnitIsPlayer then
+    local playerOK, isPlayer = pcall(UnitIsPlayer, unit)
+    if playerOK and isPlayer then return end
+  end
+
+  local reactionOK, reaction = pcall(UnitReaction, unit, "player")
+  if not reactionOK or not reaction then return end
+
+  local r, g, b
+  if FACTION_BAR_COLORS and FACTION_BAR_COLORS[reaction] then
+    local c = FACTION_BAR_COLORS[reaction]
+    r, g, b = c.r, c.g, c.b
+  elseif reaction <= 3 then
+    r, g, b = 1.0, 0.0, 0.0
+  elseif reaction == 4 then
+    r, g, b = 1.0, 1.0, 0.0
+  else
+    r, g, b = 0.0, 1.0, 0.0
+  end
+
+  local title
+  if getglobal then title = getglobal("GameTooltipTextLeft1") end
+  if not title and _G then title = _G["GameTooltipTextLeft1"] end
+  if title and title.SetTextColor then
+    title:SetTextColor(r, g, b)
+  end
 end
 
 local function ShowPlateTooltip(wrapper, unit)
@@ -215,12 +312,10 @@ local function ShowPlateTooltip(wrapper, unit)
   end
 
   -- Do NOT build the tooltip from the synthetic "mouseover" token.
-  -- SetMouseoverUnit() is still required for mouseover macros/addons, but on
-  -- some SuperWoW/ClassicAPI combinations the synthetic token can briefly
-  -- expose stale reaction data.  That is visible as a hostile NPC name
-  -- flickering between yellow and red in GameTooltip.  Feed GameTooltip the
-  -- exact plate unit instead (nameplateN when possible, GUID otherwise), just
-  -- like established custom unit-frame implementations do.
+  -- SetMouseoverUnit() is still required for mouseover macros/addons. Feed the
+  -- tooltip the exact current plate unit and then explicitly apply the NPC
+  -- reaction color. Some custom-client builds populate the correct unit/name
+  -- but leave line 1 with the previous neutral/hostile color.
   local ok = pcall(function() GameTooltip:SetUnit(unit) end)
   if not ok then
     -- Compatibility fallback for older clients that cannot tooltip a GUID.
@@ -228,6 +323,7 @@ local function ShowPlateTooltip(wrapper, unit)
   end
 
   if GameTooltip.Show then GameTooltip:Show() end
+  ForceTooltipNPCReactionColor(unit)
 end
 
 local function SetWrapperMouseover(plate, wrapper)

@@ -46,6 +46,53 @@ local powerColors = {
   [4] = { 0.00, 0.70, 1.00 }, -- Happiness / fallback legacy resource
 }
 
+-- 1.12/custom clients are inconsistent here: UnitManaType may return the
+-- old numeric id, a token such as "ENERGY", or a token as a second return.
+-- Normalize all variants so the personal power bar never falls back to the
+-- StatusBar's default white color for Rogues/Cat Form.
+local powerTokenToType = {
+  MANA = 0,
+  RAGE = 1,
+  FOCUS = 2,
+  ENERGY = 3,
+  HAPPINESS = 4,
+}
+
+local function NormalizePowerType(value)
+  if type(value) == "number" then
+    return powerColors[value] and value or nil
+  end
+  if type(value) == "string" then
+    local numeric = tonumber(value)
+    if numeric and powerColors[numeric] then return numeric end
+    return powerTokenToType[string.upper(value)]
+  end
+  return nil
+end
+
+local function GetPlayerPowerType()
+  -- Prefer the newer API when a custom client exposes it.
+  if UnitPowerType then
+    local a, b = UnitPowerType("player")
+    local powerType = NormalizePowerType(a) or NormalizePowerType(b)
+    if powerType ~= nil then return powerType end
+  end
+
+  if UnitManaType then
+    local a, b = UnitManaType("player")
+    local powerType = NormalizePowerType(a) or NormalizePowerType(b)
+    if powerType ~= nil then return powerType end
+  end
+
+  -- Safe class fallbacks for the two classes whose resource is fixed in
+  -- Vanilla. Druids are intentionally not forced because their resource
+  -- changes with form and should be reported by UnitManaType/UnitPowerType.
+  local _, class = UnitClass("player")
+  if class == "ROGUE" then return 3 end
+  if class == "WARRIOR" then return 1 end
+  return 0
+end
+
 local personalFrame
 local inCombat = false
 local updateElapsed = 0
@@ -447,8 +494,14 @@ end
 local function UpdateValues(frame)
   if not frame then return end
 
-  local health = tonumber(UnitHealth("player")) or 0
-  local maxHealth = tonumber(UnitHealthMax("player")) or 0
+  -- Some custom 1.12 APIs return extra values from UnitHealth/UnitMana.
+  -- Passing such a multi-return call directly into tonumber() makes Lua treat
+  -- the second value as tonumber's optional base argument (and can throw
+  -- "bad argument #2 ... base out of range"). Capture only the first result.
+  local rawHealth = UnitHealth("player")
+  local rawMaxHealth = UnitHealthMax("player")
+  local health = tonumber(rawHealth) or 0
+  local maxHealth = tonumber(rawMaxHealth) or 0
   if maxHealth < 1 then maxHealth = 1 end
   if health < 0 then health = 0 end
   if health > maxHealth then health = maxHealth end
@@ -482,8 +535,10 @@ local function UpdateValues(frame)
     frame.healthText:Hide()
   end
 
-  local power = tonumber(UnitMana("player")) or 0
-  local maxPower = tonumber(UnitManaMax("player")) or 0
+  local rawPower = UnitMana("player")
+  local rawMaxPower = UnitManaMax("player")
+  local power = tonumber(rawPower) or 0
+  local maxPower = tonumber(rawMaxPower) or 0
   if maxPower < 1 then maxPower = 1 end
   if power < 0 then power = 0 end
   if power > maxPower then power = maxPower end
@@ -491,13 +546,17 @@ local function UpdateValues(frame)
   frame.powerbar:SetValue(power)
   frame.powerText:SetText(FormatValue(power) .. " / " .. FormatValue(maxPower))
 
-  local powerType = 0
-  if UnitManaType then powerType = tonumber(UnitManaType("player")) or 0 end
+  local powerType = GetPlayerPowerType()
   local c = powerColors[powerType] or powerColors[0]
-  frame.powerbar:SetStatusBarColor(c[1], c[2], c[3])
+  frame.powerbar:SetStatusBarColor(c[1], c[2], c[3], 1)
 
-  local level = UnitLevel and UnitLevel("player") or nil
-  if level and level > 0 then frame.levelText:SetText(tostring(level)) else frame.levelText:SetText("") end
+  local rawLevel = UnitLevel and UnitLevel("player") or nil
+  local level = tonumber(rawLevel)
+  if level and level > 0 then
+    frame.levelText:SetText(tostring(math.floor(level)))
+  else
+    frame.levelText:SetText("")
+  end
 end
 
 local function OptionsPreviewActive()
