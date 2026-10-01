@@ -825,11 +825,12 @@ function BNP:CreateOptions()
 
   local frame = CreateFrame("Frame", "BNPOptionsFrame", UIParent)
   frame:SetWidth(470)
-  frame:SetHeight(comboOptionsClass and 735 or 710)
+  frame:SetHeight(comboOptionsClass and 963 or 883)
   -- Keep the top edge in roughly the same place and add the extra room
-  -- downward. The Icons page uses the height for Totems, Raid Marks and
-  -- Quest Indicators without crowding or clipping.
-  frame:SetPoint("CENTER", UIParent, "CENTER", 0, -40)
+  -- downward. Rogue/Druid need more room because the Combo Points section
+  -- sits above Personal Nameplate; the larger frame lets those controls keep
+  -- comfortable vertical spacing instead of being packed against the border.
+  frame:SetPoint("CENTER", UIParent, "CENTER", 0, comboOptionsClass and -109 or -102)
   frame:SetFrameStrata("DIALOG")
   frame:SetBackdrop({
     bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
@@ -1305,11 +1306,11 @@ function BNP:CreateOptions()
   -- Clean two-column grid: visibility, appearance, text/debuff positioning,
   -- then plate scale/position. Rogue/Druid get a little extra window height
   -- so the same layout stays intact below the Combo Points section.
-  local personalSectionY = comboOptionsClass and -494 or -442
+  local personalSectionY = comboOptionsClass and -500 or -448
   CreateSection(nameplatesPage, "Personal Nameplate", personalSectionY)
 
   -- Row 1: visibility.
-  local personalNameplate = CreateCheck(nameplatesPage, "Enable Personal Nameplate", personalSectionY - 22, function()
+  local personalNameplate = CreateCheck(nameplatesPage, "Enable Personal Nameplate", personalSectionY - 24, function()
     BNP_DB.personalNameplate = this:GetChecked() and true or false
     if BNP.RefreshPersonalNameplate then BNP:RefreshPersonalNameplate() end
     if frame.UpdateDependentControls then frame:UpdateDependentControls() end
@@ -1323,7 +1324,7 @@ function BNP:CreateOptions()
   personalNameplate:SetScript("OnLeave", function() GameTooltip:Hide() end)
   frame.personalNameplateCheck = personalNameplate
 
-  local personalCombatOnly = CreateCheck(nameplatesPage, "Combat Only", personalSectionY - 22, function()
+  local personalCombatOnly = CreateCheck(nameplatesPage, "Combat Only", personalSectionY - 24, function()
     BNP_DB.personalNameplateCombatOnly = this:GetChecked() and true or false
     if BNP.RefreshPersonalNameplate then BNP:RefreshPersonalNameplate() end
   end, 246)
@@ -1336,8 +1337,8 @@ function BNP:CreateOptions()
   personalCombatOnly:SetScript("OnLeave", function() GameTooltip:Hide() end)
   frame.personalNameplateCombatOnlyCheck = personalCombatOnly
 
-  -- Row 2: appearance / aura toggles.
-  local personalClassColor = CreateCheck(nameplatesPage, "Class Color", personalSectionY - 48, function()
+  -- Row 2: appearance.
+  local personalClassColor = CreateCheck(nameplatesPage, "Class Color", personalSectionY - 56, function()
     BNP_DB.personalNameplateClassColor = this:GetChecked() and true or false
     if BNP.RefreshPersonalNameplate then BNP:RefreshPersonalNameplate() end
   end, 22)
@@ -1350,10 +1351,25 @@ function BNP:CreateOptions()
   personalClassColor:SetScript("OnLeave", function() GameTooltip:Hide() end)
   frame.personalNameplateClassColorCheck = personalClassColor
 
-  local personalDebuffs = CreateCheck(nameplatesPage, "Show Debuffs", personalSectionY - 48, function()
-    BNP_DB.personalNameplateDebuffs = this:GetChecked() and true or false
+  local personalHideLevel = CreateCheck(nameplatesPage, "Hide Level", personalSectionY - 56, function()
+    BNP_DB.personalNameplateHideLevel = this:GetChecked() and true or false
     if BNP.RefreshPersonalNameplate then BNP:RefreshPersonalNameplate() end
   end, 246)
+  personalHideLevel:SetScript("OnEnter", function()
+    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+    GameTooltip:SetText("Hide Level", 1, 0.82, 0)
+    GameTooltip:AddLine("Hides the level and removes the round level medallion so the Personal Nameplate becomes a closed centered bar.", 1, 1, 1, true)
+    GameTooltip:Show()
+  end)
+  personalHideLevel:SetScript("OnLeave", function() GameTooltip:Hide() end)
+  frame.personalNameplateHideLevelCheck = personalHideLevel
+
+  -- Row 3: aura toggles. Buffs and debuffs are separate so either row can be
+  -- disabled without doing aura work for that type in the background.
+  local personalDebuffs = CreateCheck(nameplatesPage, "Show Debuffs", personalSectionY - 88, function()
+    BNP_DB.personalNameplateDebuffs = this:GetChecked() and true or false
+    if BNP.RefreshPersonalNameplate then BNP:RefreshPersonalNameplate() end
+  end, 22)
   personalDebuffs:SetScript("OnEnter", function()
     GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
     GameTooltip:SetText("Show Debuffs", 1, 0.82, 0)
@@ -1363,17 +1379,30 @@ function BNP:CreateOptions()
   personalDebuffs:SetScript("OnLeave", function() GameTooltip:Hide() end)
   frame.personalNameplateDebuffsCheck = personalDebuffs
 
-  -- Row 3: text mode on the left, debuff offset on the right.
+  local personalBuffs = CreateCheck(nameplatesPage, "Show Buffs", personalSectionY - 88, function()
+    BNP_DB.personalNameplateBuffs = this:GetChecked() and true or false
+    if BNP.RefreshPersonalNameplate then BNP:RefreshPersonalNameplate() end
+  end, 246)
+  personalBuffs:SetScript("OnEnter", function()
+    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+    GameTooltip:SetText("Show Buffs", 1, 0.82, 0)
+    GameTooltip:AddLine("Shows short buffs such as Renew, Rejuvenation and shields. Long buffs over 60 seconds are ignored.", 1, 1, 1, true)
+    GameTooltip:Show()
+  end)
+  personalBuffs:SetScript("OnLeave", function() GameTooltip:Hide() end)
+  frame.personalNameplateBuffsCheck = personalBuffs
+
+  -- Row 4: text mode on the left, debuff Y offset on the right.
   local personalHealthTextLabel = nameplatesPage:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-  personalHealthTextLabel:SetPoint("TOPLEFT", nameplatesPage, "TOPLEFT", 28, personalSectionY - 72)
+  personalHealthTextLabel:SetPoint("TOPLEFT", nameplatesPage, "TOPLEFT", 28, personalSectionY - 120)
   personalHealthTextLabel:SetText("Health Text")
   frame.personalNameplateHealthTextLabel = personalHealthTextLabel
 
   local personalHealthTextDropdown = CreateFrame("Frame", "BNPPersonalHealthTextDropdown", nameplatesPage, "UIDropDownMenuTemplate")
-  personalHealthTextDropdown:SetPoint("TOPLEFT", nameplatesPage, "TOPLEFT", 10, personalSectionY - 82)
+  personalHealthTextDropdown:SetPoint("TOPLEFT", nameplatesPage, "TOPLEFT", 10, personalSectionY - 132)
   UIDropDownMenu_SetWidth(142, personalHealthTextDropdown)
 
-  local personalDebuffYOffset = CreateSlider(nameplatesPage, "Debuff Y Offset", -50, 50, 1, personalSectionY - 82, 246, 150)
+  local personalDebuffYOffset = CreateSlider(nameplatesPage, "Debuff Y Offset", -100, 100, 1, personalSectionY - 132, 246, 150)
   personalDebuffYOffset:SetScript("OnValueChanged", function()
     if not BNP_DB then return end
     local value = RoundSignedInteger(this:GetValue())
@@ -1389,6 +1418,58 @@ function BNP:CreateOptions()
   end)
   personalDebuffYOffset:SetScript("OnLeave", function() GameTooltip:Hide() end)
   frame.personalNameplateDebuffYOffsetSlider = personalDebuffYOffset
+
+  -- Row 5: Buff Y on the left, Debuff X on the right.
+  local personalBuffYOffset = CreateSlider(nameplatesPage, "Buff Y Offset", -100, 100, 1, personalSectionY - 176, 28, 150)
+  personalBuffYOffset:SetScript("OnValueChanged", function()
+    if not BNP_DB then return end
+    local value = RoundSignedInteger(this:GetValue())
+    BNP_DB.personalNameplateBuffYOffset = value
+    getglobal(this:GetName() .. "Text"):SetText("Buff Y Offset: " .. (value > 0 and "+" or "") .. value)
+    if BNP.RefreshPersonalNameplate then BNP:RefreshPersonalNameplate() end
+  end)
+  personalBuffYOffset:SetScript("OnEnter", function()
+    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+    GameTooltip:SetText("Personal Buff Y Offset", 1, 0.82, 0)
+    GameTooltip:AddLine("Moves the Personal Nameplate buff row up or down independently from debuffs.", 1, 1, 1, true)
+    GameTooltip:Show()
+  end)
+  personalBuffYOffset:SetScript("OnLeave", function() GameTooltip:Hide() end)
+  frame.personalNameplateBuffYOffsetSlider = personalBuffYOffset
+
+  local personalDebuffXOffset = CreateSlider(nameplatesPage, "Debuff X Offset", -100, 100, 1, personalSectionY - 176, 246, 150)
+  personalDebuffXOffset:SetScript("OnValueChanged", function()
+    if not BNP_DB then return end
+    local value = RoundSignedInteger(this:GetValue())
+    BNP_DB.personalNameplateDebuffXOffset = value
+    getglobal(this:GetName() .. "Text"):SetText("Debuff X Offset: " .. (value > 0 and "+" or "") .. value)
+    if BNP.RefreshPersonalNameplate then BNP:RefreshPersonalNameplate() end
+  end)
+  personalDebuffXOffset:SetScript("OnEnter", function()
+    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+    GameTooltip:SetText("Personal Debuff X Offset", 1, 0.82, 0)
+    GameTooltip:AddLine("Moves the Personal Nameplate debuff row left or right so it does not run into the buff row or other UI.", 1, 1, 1, true)
+    GameTooltip:Show()
+  end)
+  personalDebuffXOffset:SetScript("OnLeave", function() GameTooltip:Hide() end)
+  frame.personalNameplateDebuffXOffsetSlider = personalDebuffXOffset
+
+  local personalBuffXOffset = CreateSlider(nameplatesPage, "Buff X Offset", -100, 100, 1, personalSectionY - 220, 28, 150)
+  personalBuffXOffset:SetScript("OnValueChanged", function()
+    if not BNP_DB then return end
+    local value = RoundSignedInteger(this:GetValue())
+    BNP_DB.personalNameplateBuffXOffset = value
+    getglobal(this:GetName() .. "Text"):SetText("Buff X Offset: " .. (value > 0 and "+" or "") .. value)
+    if BNP.RefreshPersonalNameplate then BNP:RefreshPersonalNameplate() end
+  end)
+  personalBuffXOffset:SetScript("OnEnter", function()
+    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+    GameTooltip:SetText("Personal Buff X Offset", 1, 0.82, 0)
+    GameTooltip:AddLine("Moves the Personal Nameplate buff row left or right independently from debuffs.", 1, 1, 1, true)
+    GameTooltip:Show()
+  end)
+  personalBuffXOffset:SetScript("OnLeave", function() GameTooltip:Hide() end)
+  frame.personalNameplateBuffXOffsetSlider = personalBuffXOffset
 
   local personalHealthModeLabels = {
     off = "Off",
@@ -1428,8 +1509,8 @@ function BNP:CreateOptions()
   frame.personalNameplateHealthTextDropdown = personalHealthTextDropdown
   frame.SetPersonalHealthTextMode = SetPersonalHealthTextMode
 
-  -- Row 4: plate size and position, aligned to the same two columns.
-  local personalScale = CreateSlider(nameplatesPage, "Scale", 0.70, 1.50, 0.05, personalSectionY - 116, 28, 150)
+  -- Row 6: remaining aura offset on the left and plate scale on the right.
+  local personalScale = CreateSlider(nameplatesPage, "Scale", 0.70, 1.50, 0.05, personalSectionY - 220, 246, 150)
   personalScale:SetScript("OnValueChanged", function()
     if not BNP_DB then return end
     local value = Round(this:GetValue(), 0.05)
@@ -1446,7 +1527,8 @@ function BNP:CreateOptions()
   personalScale:SetScript("OnLeave", function() GameTooltip:Hide() end)
   frame.personalNameplateScaleSlider = personalScale
 
-  local personalYOffset = CreateSlider(nameplatesPage, "Y Offset", -250, 150, 5, personalSectionY - 116, 246, 150)
+  -- Row 7: plate position.
+  local personalYOffset = CreateSlider(nameplatesPage, "Y Offset", -250, 150, 5, personalSectionY - 264, 28, 150)
   personalYOffset:SetScript("OnValueChanged", function()
     if not BNP_DB then return end
     local value = RoundSignedInteger(this:GetValue() / 5) * 5
@@ -2274,7 +2356,9 @@ function BNP:CreateOptions()
     local personalEnabled = BNP.IsPersonalNameplateEnabled and BNP:IsPersonalNameplateEnabled() or false
     SetCheckEnabled(self.personalNameplateCombatOnlyCheck, personalEnabled)
     SetCheckEnabled(self.personalNameplateClassColorCheck, personalEnabled)
+    SetCheckEnabled(self.personalNameplateHideLevelCheck, personalEnabled)
     SetCheckEnabled(self.personalNameplateDebuffsCheck, personalEnabled)
+    SetCheckEnabled(self.personalNameplateBuffsCheck, personalEnabled)
     if self.personalNameplateHealthTextDropdown then
       self.personalNameplateHealthTextDropdown:SetAlpha(personalEnabled and 1.0 or 0.45)
       if personalEnabled then
@@ -2286,7 +2370,7 @@ function BNP:CreateOptions()
     if self.personalNameplateHealthTextLabel then
       self.personalNameplateHealthTextLabel:SetTextColor(personalEnabled and 1 or 0.5, personalEnabled and 0.82 or 0.5, personalEnabled and 0 or 0.5)
     end
-    local personalSliders = { self.personalNameplateScaleSlider, self.personalNameplateYOffsetSlider, self.personalNameplateDebuffYOffsetSlider }
+    local personalSliders = { self.personalNameplateScaleSlider, self.personalNameplateYOffsetSlider, self.personalNameplateDebuffYOffsetSlider, self.personalNameplateBuffYOffsetSlider, self.personalNameplateDebuffXOffsetSlider, self.personalNameplateBuffXOffsetSlider }
     local personalIndex
     for personalIndex = 1, table.getn(personalSliders) do
       local personalSlider = personalSliders[personalIndex]
@@ -2462,6 +2546,9 @@ function BNP:SyncOptions()
   if frame.personalNameplateClassColorCheck then
     frame.personalNameplateClassColorCheck:SetChecked(self.IsPersonalNameplateClassColorEnabled and self:IsPersonalNameplateClassColorEnabled() or false)
   end
+  if frame.personalNameplateHideLevelCheck then
+    frame.personalNameplateHideLevelCheck:SetChecked(self.IsPersonalNameplateLevelHidden and self:IsPersonalNameplateLevelHidden() or false)
+  end
   if frame.personalNameplateHealthTextDropdown then
     local mode = self.GetPersonalNameplateHealthTextMode and self:GetPersonalNameplateHealthTextMode() or "both"
     local labels = { off = "Off", percent = "Percent", hp = "HP", both = "HP + Percent" }
@@ -2470,6 +2557,9 @@ function BNP:SyncOptions()
   end
   if frame.personalNameplateDebuffsCheck then
     frame.personalNameplateDebuffsCheck:SetChecked(self.IsPersonalNameplateDebuffsEnabled and self:IsPersonalNameplateDebuffsEnabled() or false)
+  end
+  if frame.personalNameplateBuffsCheck then
+    frame.personalNameplateBuffsCheck:SetChecked(self.IsPersonalNameplateBuffsEnabled and self:IsPersonalNameplateBuffsEnabled() or false)
   end
   if frame.personalNameplateScaleSlider then
     local value = self.GetPersonalNameplateScale and self:GetPersonalNameplateScale() or 1.0
@@ -2485,6 +2575,21 @@ function BNP:SyncOptions()
     local value = self.GetPersonalNameplateDebuffYOffset and self:GetPersonalNameplateDebuffYOffset() or 0
     frame.personalNameplateDebuffYOffsetSlider:SetValue(value)
     getglobal(frame.personalNameplateDebuffYOffsetSlider:GetName() .. "Text"):SetText("Debuff Y Offset: " .. (value > 0 and "+" or "") .. value)
+  end
+  if frame.personalNameplateBuffYOffsetSlider then
+    local value = self.GetPersonalNameplateBuffYOffset and self:GetPersonalNameplateBuffYOffset() or 0
+    frame.personalNameplateBuffYOffsetSlider:SetValue(value)
+    getglobal(frame.personalNameplateBuffYOffsetSlider:GetName() .. "Text"):SetText("Buff Y Offset: " .. (value > 0 and "+" or "") .. value)
+  end
+  if frame.personalNameplateDebuffXOffsetSlider then
+    local value = self.GetPersonalNameplateDebuffXOffset and self:GetPersonalNameplateDebuffXOffset() or 0
+    frame.personalNameplateDebuffXOffsetSlider:SetValue(value)
+    getglobal(frame.personalNameplateDebuffXOffsetSlider:GetName() .. "Text"):SetText("Debuff X Offset: " .. (value > 0 and "+" or "") .. value)
+  end
+  if frame.personalNameplateBuffXOffsetSlider then
+    local value = self.GetPersonalNameplateBuffXOffset and self:GetPersonalNameplateBuffXOffset() or 0
+    frame.personalNameplateBuffXOffsetSlider:SetValue(value)
+    getglobal(frame.personalNameplateBuffXOffsetSlider:GetName() .. "Text"):SetText("Buff X Offset: " .. (value > 0 and "+" or "") .. value)
   end
   if frame.debuffYOffsetSlider then
     local value = self:GetDebuffYOffset()

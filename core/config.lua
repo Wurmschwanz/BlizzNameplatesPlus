@@ -82,9 +82,14 @@ BNP.defaults = BNP.defaults or {
   personalNameplate = false,
   personalNameplateCombatOnly = true,
   personalNameplateClassColor = false,
+  personalNameplateHideLevel = false,
   personalNameplateHealthText = "both",
   personalNameplateDebuffs = false,
+  personalNameplateBuffs = false,
   personalNameplateDebuffYOffset = 0,
+  personalNameplateBuffYOffset = 0,
+  personalNameplateDebuffXOffset = 0,
+  personalNameplateBuffXOffset = 0,
   personalNameplateScale = 1.0,
   personalNameplateYOffset = -90,
 }
@@ -247,9 +252,14 @@ function BNP:InitConfig()
   if BNP_DB.personalNameplate == nil then BNP_DB.personalNameplate = self.defaults.personalNameplate end
   if BNP_DB.personalNameplateCombatOnly == nil then BNP_DB.personalNameplateCombatOnly = self.defaults.personalNameplateCombatOnly end
   if BNP_DB.personalNameplateClassColor == nil then BNP_DB.personalNameplateClassColor = self.defaults.personalNameplateClassColor end
+  if BNP_DB.personalNameplateHideLevel == nil then BNP_DB.personalNameplateHideLevel = self.defaults.personalNameplateHideLevel end
   if BNP_DB.personalNameplateHealthText == nil then BNP_DB.personalNameplateHealthText = self.defaults.personalNameplateHealthText end
   if BNP_DB.personalNameplateDebuffs == nil then BNP_DB.personalNameplateDebuffs = self.defaults.personalNameplateDebuffs end
+  if BNP_DB.personalNameplateBuffs == nil then BNP_DB.personalNameplateBuffs = self.defaults.personalNameplateBuffs end
   if BNP_DB.personalNameplateDebuffYOffset == nil then BNP_DB.personalNameplateDebuffYOffset = self.defaults.personalNameplateDebuffYOffset end
+  if BNP_DB.personalNameplateBuffYOffset == nil then BNP_DB.personalNameplateBuffYOffset = self.defaults.personalNameplateBuffYOffset end
+  if BNP_DB.personalNameplateDebuffXOffset == nil then BNP_DB.personalNameplateDebuffXOffset = self.defaults.personalNameplateDebuffXOffset end
+  if BNP_DB.personalNameplateBuffXOffset == nil then BNP_DB.personalNameplateBuffXOffset = self.defaults.personalNameplateBuffXOffset end
   if BNP_DB.personalNameplateScale == nil then BNP_DB.personalNameplateScale = self.defaults.personalNameplateScale end
   if BNP_DB.personalNameplateYOffset == nil then BNP_DB.personalNameplateYOffset = self.defaults.personalNameplateYOffset end
 end
@@ -728,6 +738,10 @@ function BNP:IsPersonalNameplateClassColorEnabled()
   return BNP_DB and BNP_DB.personalNameplateClassColor == true
 end
 
+function BNP:IsPersonalNameplateLevelHidden()
+  return BNP_DB and BNP_DB.personalNameplateHideLevel == true
+end
+
 function BNP:GetPersonalNameplateHealthTextMode()
   local mode = (BNP_DB and BNP_DB.personalNameplateHealthText) or self.defaults.personalNameplateHealthText or "both"
   if mode ~= "off" and mode ~= "percent" and mode ~= "hp" and mode ~= "both" then
@@ -740,10 +754,38 @@ function BNP:IsPersonalNameplateDebuffsEnabled()
   return BNP_DB and BNP_DB.personalNameplateDebuffs == true
 end
 
+function BNP:IsPersonalNameplateBuffsEnabled()
+  return BNP_DB and BNP_DB.personalNameplateBuffs == true
+end
+
 function BNP:GetPersonalNameplateDebuffYOffset()
   local value = (BNP_DB and tonumber(BNP_DB.personalNameplateDebuffYOffset)) or self.defaults.personalNameplateDebuffYOffset or 0
-  if value < -50 then value = -50 end
-  if value > 50 then value = 50 end
+  if value < -100 then value = -100 end
+  if value > 100 then value = 100 end
+  if value >= 0 then return math.floor(value + 0.5) end
+  return math.ceil(value - 0.5)
+end
+
+function BNP:GetPersonalNameplateBuffYOffset()
+  local value = (BNP_DB and tonumber(BNP_DB.personalNameplateBuffYOffset)) or self.defaults.personalNameplateBuffYOffset or 0
+  if value < -100 then value = -100 end
+  if value > 100 then value = 100 end
+  if value >= 0 then return math.floor(value + 0.5) end
+  return math.ceil(value - 0.5)
+end
+
+function BNP:GetPersonalNameplateDebuffXOffset()
+  local value = (BNP_DB and tonumber(BNP_DB.personalNameplateDebuffXOffset)) or self.defaults.personalNameplateDebuffXOffset or 0
+  if value < -100 then value = -100 end
+  if value > 100 then value = 100 end
+  if value >= 0 then return math.floor(value + 0.5) end
+  return math.ceil(value - 0.5)
+end
+
+function BNP:GetPersonalNameplateBuffXOffset()
+  local value = (BNP_DB and tonumber(BNP_DB.personalNameplateBuffXOffset)) or self.defaults.personalNameplateBuffXOffset or 0
+  if value < -100 then value = -100 end
+  if value > 100 then value = 100 end
   if value >= 0 then return math.floor(value + 0.5) end
   return math.ceil(value - 0.5)
 end

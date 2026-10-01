@@ -15,6 +15,9 @@ local POWER_HEIGHT = 5
 local PERSONAL_DEBUFF_MAX_DURATION = 60
 local PERSONAL_DEBUFF_MAX_ICONS = 6
 local PERSONAL_DEBUFF_SPACING = 1
+local PERSONAL_BUFF_MAX_DURATION = 60
+local PERSONAL_BUFF_MAX_ICONS = 6
+local PERSONAL_BUFF_SPACING = 1
 -- Match BNP health text anchoring: healthbar CENTER +3px. The personal frame
 -- is wider than the healthbar because of the level medallion, so centering
 -- debuffs on the whole frame makes the row look shifted to the right.
@@ -24,6 +27,14 @@ local PERSONAL_POWER_TEXT_Y = 1
 local PERSONAL_CONTENT_CENTER_X = (5 + HEALTH_WIDTH / 2 + PERSONAL_HEALTH_TEXT_X) - (FRAME_WIDTH / 2)
 local STATUS_TEXTURE = "Interface\\TargetingFrame\\UI-StatusBar"
 local BORDER_TEXTURE = "Interface\\AddOns\\BlizzNameplatesPlus\\media\\classic_nameplate_border"
+-- The classic texture's health-bar portion occupies the first 108/128 pixels;
+-- the final 20 pixels are the round level medallion. Cropping at 108 gives us
+-- a native-looking closed border when the personal level is hidden.
+local NO_LEVEL_BORDER_WIDTH = 108
+local NO_LEVEL_BORDER_TEX_RIGHT = 108 / 128
+local NO_LEVEL_BORDER_X = (FRAME_WIDTH - NO_LEVEL_BORDER_WIDTH) / 2
+local NO_LEVEL_HEALTH_X = (FRAME_WIDTH - HEALTH_WIDTH) / 2
+local NO_LEVEL_POWER_X = NO_LEVEL_HEALTH_X
 local FONT = "Fonts\\FRIZQT__.TTF"
 
 local classFallback = {
@@ -97,6 +108,7 @@ local personalFrame
 local inCombat = false
 local updateElapsed = 0
 local debuffScanElapsed = 0
+local buffScanElapsed = 0
 
 local function FormatValue(value)
   value = tonumber(value) or 0
@@ -285,6 +297,52 @@ local function CreatePersonalFrame()
   end
   debuffHolder:Hide()
 
+  -- Short player buffs (HoTs, absorbs, short defensive effects) use a second
+  -- compact row. When debuffs are visible this row sits directly above them;
+  -- otherwise it drops down to the normal aura anchor above the plate.
+  local buffHolder = CreateFrame("Frame", nil, frame)
+  buffHolder:SetWidth(FRAME_WIDTH)
+  buffHolder:SetHeight(22)
+  buffHolder:SetPoint("BOTTOM", frame, "TOP", PERSONAL_CONTENT_CENTER_X, 1)
+  buffHolder:SetFrameLevel(frame:GetFrameLevel() + 6)
+  buffHolder:EnableMouse(false)
+  buffHolder.icons = {}
+  frame.buffHolder = buffHolder
+
+  for i = 1, PERSONAL_BUFF_MAX_ICONS do
+    local icon = CreateFrame("Frame", nil, buffHolder)
+    icon:SetWidth(18)
+    icon:SetHeight(18)
+    icon:SetFrameLevel(buffHolder:GetFrameLevel())
+    icon:EnableMouse(false)
+
+    local iconBG = CreateSolidTexture(icon, "BACKGROUND")
+    iconBG:SetPoint("TOPLEFT", icon, "TOPLEFT", -1, 1)
+    iconBG:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", 1, -1)
+    iconBG:SetVertexColor(0, 0, 0, 0.95)
+
+    local texture = icon:CreateTexture(nil, "ARTWORK")
+    texture:SetAllPoints(icon)
+    icon.texture = texture
+
+    local timer = icon:CreateFontString(nil, "OVERLAY")
+    timer:SetFont(FONT, 8, "OUTLINE")
+    timer:SetPoint("CENTER", icon, "CENTER", 0, 0)
+    timer:SetTextColor(1, 1, 1)
+    icon.timer = timer
+
+    local stack = icon:CreateFontString(nil, "OVERLAY")
+    stack:SetFont(FONT, 7, "OUTLINE")
+    stack:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", -1, 1)
+    stack:SetTextColor(1, 1, 1)
+    stack:SetText("")
+    icon.stack = stack
+
+    icon:Hide()
+    buffHolder.icons[i] = icon
+  end
+  buffHolder:Hide()
+
   personalFrame = frame
   BNP.personalNameplateFrame = frame
   return frame
@@ -303,8 +361,42 @@ local function GetPlayerHealthColor()
   return 0.10, 0.95, 0.10
 end
 
+local function ApplyLevelLayout(frame)
+  if not frame then return end
+
+  local hideLevel = BNP.IsPersonalNameplateLevelHidden and BNP:IsPersonalNameplateLevelHidden()
+  if hideLevel then
+    frame.border:ClearAllPoints()
+    frame.border:SetWidth(NO_LEVEL_BORDER_WIDTH)
+    frame.border:SetTexCoord(0, NO_LEVEL_BORDER_TEX_RIGHT, 0, 1)
+    frame.border:SetPoint("TOPLEFT", frame, "TOPLEFT", NO_LEVEL_BORDER_X, 0)
+
+    frame.healthbar:ClearAllPoints()
+    frame.healthbar:SetWidth(HEALTH_WIDTH)
+    frame.healthbar:SetPoint("TOPLEFT", frame, "TOPLEFT", NO_LEVEL_HEALTH_X, -19)
+
+    frame.powerHolder:ClearAllPoints()
+    frame.powerHolder:SetPoint("TOPLEFT", frame, "TOPLEFT", NO_LEVEL_POWER_X, -34)
+    frame.levelText:Hide()
+  else
+    frame.border:ClearAllPoints()
+    frame.border:SetWidth(128)
+    frame.border:SetTexCoord(0, 1, 0, 1)
+    frame.border:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0)
+
+    frame.healthbar:ClearAllPoints()
+    frame.healthbar:SetWidth(HEALTH_WIDTH)
+    frame.healthbar:SetPoint("TOPLEFT", frame, "TOPLEFT", 5, -19)
+
+    frame.powerHolder:ClearAllPoints()
+    frame.powerHolder:SetPoint("TOPLEFT", frame, "TOPLEFT", 3, -34)
+  end
+end
+
 local function UpdateStyle(frame)
   if not frame then return end
+
+  ApplyLevelLayout(frame)
 
   local dark = BNP.IsDarkNameplateBorderEnabled and BNP:IsDarkNameplateBorderEnabled()
   local hidden = BNP.IsNameplateBorderHidden and BNP:IsNameplateBorderHidden()
@@ -332,10 +424,37 @@ local function UpdateStyle(frame)
     frame.healthBG:SetVertexColor(0, 0, 0, 1)
   end
 
-  if hidden then frame.levelText:Hide() else frame.levelText:Show() end
+  local hideLevel = BNP.IsPersonalNameplateLevelHidden and BNP:IsPersonalNameplateLevelHidden()
+  if hidden or hideLevel then frame.levelText:Hide() else frame.levelText:Show() end
 
   local hr, hg, hb = GetPlayerHealthColor()
   frame.healthbar:SetStatusBarColor(hr, hg, hb)
+end
+
+local function PositionPersonalAuraHolders(frame)
+  if not frame then return end
+
+  local hideLevel = BNP.IsPersonalNameplateLevelHidden and BNP:IsPersonalNameplateLevelHidden()
+  local contentCenterX = hideLevel and PERSONAL_HEALTH_TEXT_X or PERSONAL_CONTENT_CENTER_X
+
+  local debuffY = BNP.GetPersonalNameplateDebuffYOffset and BNP:GetPersonalNameplateDebuffYOffset() or 0
+  local buffY = BNP.GetPersonalNameplateBuffYOffset and BNP:GetPersonalNameplateBuffYOffset() or 0
+  local debuffX = BNP.GetPersonalNameplateDebuffXOffset and BNP:GetPersonalNameplateDebuffXOffset() or 0
+  local buffX = BNP.GetPersonalNameplateBuffXOffset and BNP:GetPersonalNameplateBuffXOffset() or 0
+
+  if frame.debuffHolder then
+    frame.debuffHolder:ClearAllPoints()
+    frame.debuffHolder:SetPoint("BOTTOM", frame, "TOP", contentCenterX + debuffX, 1 + debuffY)
+  end
+
+  if frame.buffHolder then
+    frame.buffHolder:ClearAllPoints()
+    if frame.debuffHolder and frame.debuffHolder:IsShown() then
+      frame.buffHolder:SetPoint("BOTTOM", frame, "TOP", contentCenterX + buffX, 25 + buffY)
+    else
+      frame.buffHolder:SetPoint("BOTTOM", frame, "TOP", contentCenterX + buffX, 1 + buffY)
+    end
+  end
 end
 
 local function UpdatePosition(frame)
@@ -346,12 +465,7 @@ local function UpdatePosition(frame)
   frame:SetScale(scale)
   frame:ClearAllPoints()
   frame:SetPoint("CENTER", UIParent, "CENTER", 0, y)
-
-  if frame.debuffHolder then
-    local debuffY = BNP.GetPersonalNameplateDebuffYOffset and BNP:GetPersonalNameplateDebuffYOffset() or 0
-    frame.debuffHolder:ClearAllPoints()
-    frame.debuffHolder:SetPoint("BOTTOM", frame, "TOP", PERSONAL_CONTENT_CENTER_X, 1 + debuffY)
-  end
+  PositionPersonalAuraHolders(frame)
 end
 
 local function GetPersonalDebuffIconSize()
@@ -373,7 +487,13 @@ local function ReadPlayerDebuff(index)
   if type(C_UnitAuras) == "table" and type(C_UnitAuras.GetDebuffDataByIndex) == "function" then
     local ok, aura = pcall(C_UnitAuras.GetDebuffDataByIndex, "player", index)
     if not ok or not aura then return nil end
-    return aura.icon, aura.applications or aura.count or 0, aura.duration, aura.expirationTime, aura.name, aura.spellId or aura.spellID
+    return aura.icon or aura.texture, aura.applications or aura.count or 0, aura.duration, aura.expirationTime, aura.name, aura.spellId or aura.spellID
+  end
+
+  if type(C_UnitAuras) == "table" and type(C_UnitAuras.GetAuraDataByIndex) == "function" then
+    local ok, aura = pcall(C_UnitAuras.GetAuraDataByIndex, "player", index, "HARMFUL")
+    if not ok or not aura then return nil end
+    return aura.icon or aura.texture, aura.applications or aura.count or 0, aura.duration, aura.expirationTime, aura.name, aura.spellId or aura.spellID
   end
 
   if type(C_UnitAuras) == "table" and type(C_UnitAuras.UnitDebuff) == "function" then
@@ -393,6 +513,35 @@ local function ReadPlayerDebuff(index)
   return nil
 end
 
+local function ReadPlayerBuff(index)
+  if type(C_UnitAuras) == "table" and type(C_UnitAuras.GetBuffDataByIndex) == "function" then
+    local ok, aura = pcall(C_UnitAuras.GetBuffDataByIndex, "player", index)
+    if not ok or not aura then return nil end
+    return aura.icon or aura.texture, aura.applications or aura.count or 0, aura.duration, aura.expirationTime, aura.name, aura.spellId or aura.spellID
+  end
+
+  if type(C_UnitAuras) == "table" and type(C_UnitAuras.GetAuraDataByIndex) == "function" then
+    local ok, aura = pcall(C_UnitAuras.GetAuraDataByIndex, "player", index, "HELPFUL")
+    if not ok or not aura then return nil end
+    return aura.icon or aura.texture, aura.applications or aura.count or 0, aura.duration, aura.expirationTime, aura.name, aura.spellId or aura.spellID
+  end
+
+  if type(C_UnitAuras) == "table" and type(C_UnitAuras.UnitBuff) == "function" then
+    local name, icon, count, dispelType, duration, expirationTime, source, isStealable, nameplateShowPersonal, spellID = C_UnitAuras.UnitBuff("player", index)
+    if not name then return nil end
+    return icon, count or 0, duration, expirationTime, name, spellID
+  end
+
+  -- As with debuffs, legacy 1.12 UnitBuff has no dependable duration on its
+  -- own. Only use it when a custom client supplies duration + expiration.
+  if UnitBuff then
+    local texture, count, dispelType, spellID, duration, expirationTime = UnitBuff("player", index)
+    if not texture then return nil end
+    return texture, count or 0, duration, expirationTime, nil, spellID
+  end
+  return nil
+end
+
 local function HidePersonalDebuffs(frame)
   if not frame or not frame.debuffHolder then return end
   local i
@@ -403,6 +552,7 @@ local function HidePersonalDebuffs(frame)
     icon:Hide()
   end
   frame.debuffHolder:Hide()
+  PositionPersonalAuraHolders(frame)
 end
 
 local function UpdatePersonalDebuffs(frame, forceScan)
@@ -489,6 +639,109 @@ local function UpdatePersonalDebuffs(frame, forceScan)
     icon:Hide()
   end
   frame.debuffHolder:Show()
+  PositionPersonalAuraHolders(frame)
+end
+
+local function HidePersonalBuffs(frame)
+  if not frame or not frame.buffHolder then return end
+  local i
+  for i = 1, table.getn(frame.buffHolder.icons or {}) do
+    local icon = frame.buffHolder.icons[i]
+    icon.timer:SetText("")
+    icon.stack:SetText("")
+    icon:Hide()
+  end
+  frame.buffHolder:Hide()
+end
+
+local function UpdatePersonalBuffs(frame, forceScan)
+  if not frame or not frame.buffHolder then return end
+  if not (BNP.IsPersonalNameplateBuffsEnabled and BNP:IsPersonalNameplateBuffsEnabled()) then
+    frame.BNPPersonalBuffEntries = nil
+    HidePersonalBuffs(frame)
+    return
+  end
+
+  local now = GetTime()
+  local entries = frame.BNPPersonalBuffEntries
+  if forceScan or not entries then
+    entries = {}
+    local index
+    for index = 1, 64 do
+      local texture, count, duration, expirationTime, name, spellID = ReadPlayerBuff(index)
+      if not texture then break end
+
+      duration = tonumber(duration) or 0
+      expirationTime = tonumber(expirationTime) or 0
+      -- Keep this row focused on combat-relevant temporary effects: HoTs,
+      -- absorbs/shields and short cooldown buffs. Long raid/world buffs are
+      -- intentionally ignored.
+      if duration > 0 and duration <= PERSONAL_BUFF_MAX_DURATION and expirationTime > now then
+        table.insert(entries, {
+          texture = texture,
+          count = tonumber(count) or 0,
+          duration = duration,
+          expirationTime = expirationTime,
+          name = name,
+          spellID = spellID,
+        })
+        if table.getn(entries) >= PERSONAL_BUFF_MAX_ICONS then break end
+      end
+    end
+    frame.BNPPersonalBuffEntries = entries
+  end
+
+  local visible = 0
+  local i
+  for i = 1, table.getn(entries) do
+    if entries[i].expirationTime and entries[i].expirationTime > now then
+      visible = visible + 1
+    end
+  end
+
+  if visible < 1 then
+    HidePersonalBuffs(frame)
+    return
+  end
+
+  local size = GetPersonalDebuffIconSize()
+  local totalWidth = visible * size + (visible - 1) * PERSONAL_BUFF_SPACING
+  local startX = -totalWidth / 2
+  local displayIndex = 0
+  for i = 1, table.getn(entries) do
+    local entry = entries[i]
+    if entry.expirationTime and entry.expirationTime > now then
+      displayIndex = displayIndex + 1
+      local icon = frame.buffHolder.icons[displayIndex]
+      if icon then
+        if icon.BNPLastSize ~= size then
+          icon:SetWidth(size)
+          icon:SetHeight(size)
+          icon.timer:SetFont(FONT, math.max(7, math.floor(size * 0.44 + 0.5)), "OUTLINE")
+          icon.stack:SetFont(FONT, math.max(6, math.floor(size * 0.38 + 0.5)), "OUTLINE")
+          icon.BNPLastSize = size
+        end
+        icon:ClearAllPoints()
+        icon:SetPoint("LEFT", frame.buffHolder, "CENTER", startX + (displayIndex - 1) * (size + PERSONAL_BUFF_SPACING), 0)
+        if icon.BNPLastTexture ~= entry.texture then
+          icon.texture:SetTexture(entry.texture)
+          icon.BNPLastTexture = entry.texture
+        end
+        icon.timer:SetText(FormatDebuffTimer(entry.expirationTime - now))
+        icon.stack:SetText(entry.count > 1 and tostring(entry.count) or "")
+        icon:Show()
+      end
+    end
+  end
+
+  for i = displayIndex + 1, table.getn(frame.buffHolder.icons) do
+    local icon = frame.buffHolder.icons[i]
+    icon.timer:SetText("")
+    icon.stack:SetText("")
+    icon:Hide()
+  end
+  frame.buffHolder:Show()
+  PositionPersonalAuraHolders(frame)
 end
 
 local function UpdateValues(frame)
@@ -610,6 +863,7 @@ local function SetRuntimeEnabled(enabled)
     updater:SetScript("OnUpdate", nil)
     updateElapsed = 0
     debuffScanElapsed = 0
+    buffScanElapsed = 0
     if personalFrame then personalFrame:Hide() end
   end
 end
@@ -632,6 +886,7 @@ local function Refresh()
   if ShouldShow() then
     frame:Show()
     UpdatePersonalDebuffs(frame, true)
+    UpdatePersonalBuffs(frame, true)
   else
     frame:Hide()
   end
@@ -646,7 +901,10 @@ function BNP:RefreshPersonalNameplateStyle()
   if not personalFrame then return end
   UpdateStyle(personalFrame)
   UpdateValues(personalFrame)
-  if personalFrame:IsShown() then UpdatePersonalDebuffs(personalFrame, true) end
+  if personalFrame:IsShown() then
+    UpdatePersonalDebuffs(personalFrame, true)
+    UpdatePersonalBuffs(personalFrame, true)
+  end
 end
 
 events:SetScript("OnEvent", function()
@@ -683,7 +941,10 @@ events:SetScript("OnEvent", function()
   if personalFrame then
     UpdateValues(personalFrame)
     UpdateStyle(personalFrame)
-    if event == "UNIT_AURA" and personalFrame:IsShown() then UpdatePersonalDebuffs(personalFrame, true) end
+    if event == "UNIT_AURA" and personalFrame:IsShown() then
+      UpdatePersonalDebuffs(personalFrame, true)
+      UpdatePersonalBuffs(personalFrame, true)
+    end
   end
 end)
 
@@ -702,16 +963,29 @@ RuntimeOnUpdate = function()
     if not personalFrame:IsShown() then
       personalFrame:Show()
       debuffScanElapsed = 0.50
+      buffScanElapsed = 0.50
     end
     UpdateValues(personalFrame)
 
-    debuffScanElapsed = debuffScanElapsed + 0.10
-    local forceScan = false
-    if debuffScanElapsed >= 0.50 then
-      debuffScanElapsed = 0
-      forceScan = true
+    local forceDebuffScan = false
+    if BNP.IsPersonalNameplateDebuffsEnabled and BNP:IsPersonalNameplateDebuffsEnabled() then
+      debuffScanElapsed = debuffScanElapsed + 0.10
+      if debuffScanElapsed >= 0.50 then
+        debuffScanElapsed = 0
+        forceDebuffScan = true
+      end
     end
-    UpdatePersonalDebuffs(personalFrame, forceScan)
+    UpdatePersonalDebuffs(personalFrame, forceDebuffScan)
+
+    local forceBuffScan = false
+    if BNP.IsPersonalNameplateBuffsEnabled and BNP:IsPersonalNameplateBuffsEnabled() then
+      buffScanElapsed = buffScanElapsed + 0.10
+      if buffScanElapsed >= 0.50 then
+        buffScanElapsed = 0
+        forceBuffScan = true
+      end
+    end
+    UpdatePersonalBuffs(personalFrame, forceBuffScan)
   elseif personalFrame:IsShown() then
     personalFrame:Hide()
   end

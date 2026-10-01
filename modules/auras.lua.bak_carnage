@@ -3175,14 +3175,14 @@ local function SyncAuraRemoval(unit, guid, now, snapshot, currentTargetGUID, eve
   local i
   local maxIndex = snapshot and snapshot.count or 64
   for i = 1, maxIndex do
-    local texture, stacks, dtype, auraSpellID, liveDuration, liveExpires, source
+    local texture, stacks, dtype, auraSpellID, source
     if snapshot then
       local entry = snapshot.entries[i]
       if not entry then break end
-      texture, stacks, dtype, auraSpellID, liveDuration, liveExpires, source =
-        entry[1], entry[2], entry[3], entry[4], entry[5], entry[6], entry[7]
+      texture, stacks, dtype, auraSpellID, source = entry[1], entry[2], entry[3], entry[4], entry[7]
     else
-      texture, stacks, dtype, auraSpellID, liveDuration, liveExpires, source = BNP:_ReadClassicDebuff(unit, i)
+      local duration, expirationTime
+      texture, stacks, dtype, auraSpellID, duration, expirationTime, source = BNP:_ReadClassicDebuff(unit, i)
       if not texture then break end
     end
 
@@ -3193,8 +3193,7 @@ local function SyncAuraRemoval(unit, guid, now, snapshot, currentTargetGUID, eve
       -- aura is safe when it is still ours OR ClassicAPI temporarily lost the
       -- source metadata.  A known foreign source alone is not enough to keep
       -- our timer alive.
-      local knownForeign = BNP:_IsKnownForeignClassicAuraSource(source)
-      if not knownForeign then
+      if not BNP:_IsKnownForeignClassicAuraSource(source) then
         BNP._RemovalPresentSafe[auraSpellID] = presentGeneration
       end
 
@@ -3202,31 +3201,6 @@ local function SyncAuraRemoval(unit, guid, now, snapshot, currentTargetGUID, eve
       for trackedKey, trackedAura in pairs(cache) do
         if type(trackedAura) == "table" and trackedAura.spellID == auraSpellID then
           trackedAura.stacks = tonumber(stacks) or 0
-
-          -- ClassicAPI is authoritative for the live expiration of our aura.
-          -- Some talents/procs (for example Turtle WoW Druid Carnage) renew an
-          -- existing bleed without another Rake/Rip cast. Previously BNP only
-          -- updated stacks here, so the cached cast timer expired even though
-          -- the real aura had already received a new expirationTime.
-          --
-          -- Never extend from a known foreign caster. Unknown source remains a
-          -- valid fallback because some custom-client packets omit ownership.
-          local apiDuration = tonumber(liveDuration)
-          local apiExpires = tonumber(liveExpires)
-          if not knownForeign and apiExpires and apiExpires > now then
-            local oldExpires = tonumber(trackedAura.expires)
-            if not oldExpires or math.abs(apiExpires - oldExpires) > 0.05 then
-              if apiDuration and apiDuration > 0 then
-                trackedAura.duration = apiDuration
-              end
-              trackedAura.expires = apiExpires
-              trackedAura.classicAPITiming = true
-              trackedAura.liveConfirmed = true
-              trackedAura.missingScans = nil
-              trackedAura.exactMissingScans = nil
-              RaidTrace("LIVE_REFRESH", guid, trackedKey, auraSpellID)
-            end
-          end
         end
       end
     end
