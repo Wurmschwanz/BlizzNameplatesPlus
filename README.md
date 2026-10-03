@@ -201,22 +201,6 @@ The goal remains the same:
 
 ---
 
-## 🆕 v2.0.0 Highlights
-
-- Completely redesigned **modern configuration menu**
-- New left-side settings navigation
-- New dedicated **Personal Nameplate** settings page
-- Resizable configuration window
-- Visible and draggable custom scrollbars
-- Improved layout for **Auras, Buffs, Debuffs and positioning options**
-- Consistent dropdown and Color Picker styling
-- Improved support for different UI scales
-- Independent Buff / Debuff positioning for Personal Nameplates
-- Improved Druid bleed refresh handling
-- Additional aura tracking and compatibility fixes
-- All existing BNP functionality preserved
-
----
 
 ## 🔎 Missing Spell / Aura Recorder
 
