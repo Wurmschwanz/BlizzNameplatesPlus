@@ -22,9 +22,19 @@ local function CreateSlider(parent, label, minValue, maxValue, step, y, x, width
   slider:SetHeight(16)
   slider:SetMinMaxValues(minValue, maxValue)
   slider:SetValueStep(step)
-  getglobal(slider:GetName() .. "Low"):SetText(tostring(minValue))
-  getglobal(slider:GetName() .. "High"):SetText(tostring(maxValue))
-  getglobal(slider:GetName() .. "Text"):SetText(label)
+
+  -- Modern BNP menu: keep the useful value/title, remove the noisy min/max
+  -- labels from Blizzard's old slider template.
+  local low = getglobal(slider:GetName() .. "Low")
+  local high = getglobal(slider:GetName() .. "High")
+  local title = getglobal(slider:GetName() .. "Text")
+  if low then low:SetText(""); low:Hide() end
+  if high then high:SetText(""); high:Hide() end
+  if title then
+    title:SetText(label)
+    title:SetTextColor(0.90, 0.92, 0.95)
+  end
+
   return slider
 end
 
@@ -34,9 +44,10 @@ local function CreateCheck(parent, label, y, onclick, x)
   check:SetWidth(24)
   check:SetHeight(24)
 
-  local text = parent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  local text = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
   text:SetPoint("LEFT", check, "RIGHT", 4, 0)
   text:SetText(label)
+  text:SetTextColor(0.90, 0.92, 0.95)
   check.BNPLabel = text
 
   check:SetScript("OnClick", onclick)
@@ -824,61 +835,285 @@ function BNP:CreateOptions()
   if self.optionsFrame then return end
 
   local frame = CreateFrame("Frame", "BNPOptionsFrame", UIParent)
-  frame:SetWidth(470)
-  frame:SetHeight(comboOptionsClass and 963 or 883)
-  -- Keep the top edge in roughly the same place and add the extra room
-  -- downward. Rogue/Druid need more room because the Combo Points section
-  -- sits above Personal Nameplate; the larger frame lets those controls keep
-  -- comfortable vertical spacing instead of being packed against the border.
-  frame:SetPoint("CENTER", UIParent, "CENTER", 0, comboOptionsClass and -109 or -102)
+
+  -- Resizable modern window. Size is saved per character so players using
+  -- different UI scales can keep the menu at the dimensions that suit them.
+  local minOptionsWidth, minOptionsHeight = 600, 430
+  local maxOptionsWidth = math.max(650, (UIParent:GetWidth() or 1024) - 40)
+  local maxOptionsHeight = math.max(438, (UIParent:GetHeight() or 768) - 40)
+  local savedWidth = BNP_DB and tonumber(BNP_DB.optionsWidth) or 650
+  local savedHeight = BNP_DB and tonumber(BNP_DB.optionsHeight) or 438
+  if savedWidth < minOptionsWidth then savedWidth = minOptionsWidth end
+  if savedHeight < minOptionsHeight then savedHeight = minOptionsHeight end
+  if savedWidth > maxOptionsWidth then savedWidth = maxOptionsWidth end
+  if savedHeight > maxOptionsHeight then savedHeight = maxOptionsHeight end
+
+  frame:SetWidth(savedWidth)
+  frame:SetHeight(savedHeight)
+  frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
   frame:SetFrameStrata("DIALOG")
   frame:SetBackdrop({
-    bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
-    edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
-    tile = true, tileSize = 32, edgeSize = 32,
-    insets = { left = 11, right = 12, top = 12, bottom = 11 }
+    bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
+    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+    tile = true, tileSize = 16, edgeSize = 12,
+    insets = { left = 3, right = 3, top = 3, bottom = 3 }
   })
+  frame:SetBackdropColor(0.035, 0.045, 0.060, 0.98)
+  frame:SetBackdropBorderColor(0.18, 0.24, 0.32, 1)
   frame:SetMovable(true)
+  if frame.SetResizable then frame:SetResizable(true) end
+  if frame.SetMinResize then frame:SetMinResize(minOptionsWidth, minOptionsHeight) end
+  if frame.SetMaxResize then frame:SetMaxResize(maxOptionsWidth, maxOptionsHeight) end
+  if frame.SetClampedToScreen then frame:SetClampedToScreen(true) end
   frame:EnableMouse(true)
   frame:RegisterForDrag("LeftButton")
   frame:SetScript("OnDragStart", function() this:StartMoving() end)
   frame:SetScript("OnDragStop", function() this:StopMovingOrSizing() end)
   frame:SetScript("OnShow", function()
     if BNP.RefreshPersonalNameplate then BNP:RefreshPersonalNameplate() end
+    if this.BNPRefreshResizableLayout then this:BNPRefreshResizableLayout() end
   end)
   frame:SetScript("OnHide", function()
     if BNP.RefreshPersonalNameplate then BNP:RefreshPersonalNameplate() end
+    BNP_DB = BNP_DB or {}
+    BNP_DB.optionsWidth = math.floor((this:GetWidth() or 650) + 0.5)
+    BNP_DB.optionsHeight = math.floor((this:GetHeight() or 438) + 0.5)
   end)
   frame:Hide()
 
+  -- Header ---------------------------------------------------------------
+  local headerBG = frame:CreateTexture(nil, "BACKGROUND")
+  headerBG:SetTexture("Interface\\ChatFrame\\ChatFrameBackground")
+  headerBG:SetVertexColor(0.055, 0.075, 0.105, 1)
+  headerBG:SetPoint("TOPLEFT", frame, "TOPLEFT", 4, -4)
+  headerBG:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -4, -4)
+  headerBG:SetHeight(70)
+
+  local headerAccent = frame:CreateTexture(nil, "ARTWORK")
+  headerAccent:SetTexture("Interface\\ChatFrame\\ChatFrameBackground")
+  headerAccent:SetVertexColor(0.19, 0.52, 0.92, 1)
+  headerAccent:SetPoint("BOTTOMLEFT", headerBG, "BOTTOMLEFT", 0, 0)
+  headerAccent:SetPoint("BOTTOMRIGHT", headerBG, "BOTTOMRIGHT", 0, 0)
+  headerAccent:SetHeight(2)
+
   local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-  title:SetPoint("TOP", frame, "TOP", 0, -18)
+  title:SetPoint("TOPLEFT", frame, "TOPLEFT", 22, -16)
   title:SetText("Blizz Nameplates+")
+  title:SetTextColor(0.96, 0.97, 1.00)
+
+  local subtitle = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  subtitle:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -5)
+  subtitle:SetText("Classic Blizzard nameplates, refined.")
+  subtitle:SetTextColor(0.52, 0.60, 0.70)
+
+  local author = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  author:SetPoint("LEFT", subtitle, "RIGHT", 8, 0)
+  author:SetText("by Wurmschwanz")
+  author:SetTextColor(0.92, 0.72, 0.25)
 
   local version = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-  version:SetPoint("TOP", title, "BOTTOM", 0, -4)
+  version:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -46, -22)
   version:SetText("Version " .. tostring(BNP.version or "?"))
+  version:SetTextColor(0.42, 0.68, 1.00)
   frame.versionText = version
 
   local close = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
-  close:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -5, -5)
+  close:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -5, -7)
 
-  local function CreatePage()
-    local page = CreateFrame("Frame", nil, frame)
-    page:SetPoint("TOPLEFT", frame, "TOPLEFT", 18, -104)
-    page:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -18, 14)
-    page:Hide()
+  -- Left navigation / content surfaces ----------------------------------
+  local sidebarBG = frame:CreateTexture(nil, "BACKGROUND")
+  sidebarBG:SetTexture("Interface\\ChatFrame\\ChatFrameBackground")
+  sidebarBG:SetVertexColor(0.025, 0.032, 0.045, 1)
+  sidebarBG:SetPoint("TOPLEFT", frame, "TOPLEFT", 10, -82)
+  sidebarBG:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 10, 12)
+  sidebarBG:SetWidth(146)
+
+  local sidebarLine = frame:CreateTexture(nil, "ARTWORK")
+  sidebarLine:SetTexture("Interface\\ChatFrame\\ChatFrameBackground")
+  sidebarLine:SetVertexColor(0.14, 0.18, 0.24, 1)
+  sidebarLine:SetPoint("TOPRIGHT", sidebarBG, "TOPRIGHT", 0, 0)
+  sidebarLine:SetPoint("BOTTOMRIGHT", sidebarBG, "BOTTOMRIGHT", 0, 0)
+  sidebarLine:SetWidth(1)
+
+  local contentBG = frame:CreateTexture(nil, "BACKGROUND")
+  contentBG:SetTexture("Interface\\ChatFrame\\ChatFrameBackground")
+  contentBG:SetVertexColor(0.045, 0.055, 0.072, 0.96)
+  contentBG:SetPoint("TOPLEFT", frame, "TOPLEFT", 166, -82)
+  contentBG:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -10, 12)
+
+  local pageIndex = 0
+  local function CreatePage(contentHeight)
+    -- Keep the outer options window compact. Longer pages live inside their
+    -- own clipped ScrollFrame. A slim modern scrollbar on the right makes it
+    -- obvious when more settings are available below the visible area.
+    pageIndex = pageIndex + 1
+
+    local scroll = CreateFrame("ScrollFrame", "BNPOptionsPageScroll" .. pageIndex, frame)
+    scroll:SetPoint("TOPLEFT", frame, "TOPLEFT", 176, -100)
+    scroll:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -28, 14)
+    scroll:EnableMouseWheel(true)
+    scroll:Hide()
+
+    local page = CreateFrame("Frame", nil, scroll)
+    page:SetWidth(438)
+    page:SetHeight(contentHeight or 580)
+    scroll:SetScrollChild(page)
+    page.BNPScrollFrame = scroll
+
+    local scrollBar = CreateFrame("Slider", "BNPOptionsPageScrollbar" .. pageIndex, frame)
+    scrollBar:SetOrientation("VERTICAL")
+    scrollBar:SetWidth(10)
+    scrollBar:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -14, -104)
+    scrollBar:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -14, 18)
+    scrollBar:SetMinMaxValues(0, 1)
+    scrollBar:SetValue(0)
+    scrollBar:SetValueStep(1)
+    scrollBar:Hide()
+
+    local track = scrollBar:CreateTexture(nil, "BACKGROUND")
+    track:SetTexture("Interface\\ChatFrame\\ChatFrameBackground")
+    track:SetVertexColor(0.10, 0.13, 0.17, 0.95)
+    track:SetPoint("TOP", scrollBar, "TOP", 0, 0)
+    track:SetPoint("BOTTOM", scrollBar, "BOTTOM", 0, 0)
+    track:SetWidth(4)
+    scrollBar.BNPTrack = track
+
+    -- Keep WoW's native slider thumb only as the invisible drag/position
+    -- anchor. Some Vanilla/custom clients can visually split a stretched
+    -- thumb texture while scrolling or resizing, so BNP draws its own solid
+    -- thumb frame on top instead. This keeps the scrollbar visually stable
+    -- while preserving the Slider's native drag behaviour.
+    scrollBar:SetThumbTexture("Interface\\ChatFrame\\ChatFrameBackground")
+    local thumb = scrollBar:GetThumbTexture()
+    if thumb then
+      thumb:SetWidth(8)
+      thumb:SetHeight(42)
+      thumb:SetVertexColor(1, 1, 1, 0)
+    end
+
+    local visualThumb = CreateFrame("Frame", nil, scrollBar)
+    visualThumb:SetWidth(8)
+    visualThumb:SetHeight(42)
+    visualThumb:SetFrameLevel(scrollBar:GetFrameLevel() + 2)
+    if thumb then
+      visualThumb:SetPoint("CENTER", thumb, "CENTER", 0, 0)
+    else
+      visualThumb:SetPoint("TOP", scrollBar, "TOP", 0, 0)
+    end
+
+    local visualThumbBG = visualThumb:CreateTexture(nil, "ARTWORK")
+    visualThumbBG:SetTexture("Interface\\ChatFrame\\ChatFrameBackground")
+    visualThumbBG:SetVertexColor(0.28, 0.58, 0.96, 1)
+    visualThumbBG:SetAllPoints(visualThumb)
+    visualThumb.BNPTexture = visualThumbBG
+    scrollBar.BNPVisualThumb = visualThumb
+
+    local topCap = scrollBar:CreateTexture(nil, "ARTWORK")
+    topCap:SetTexture("Interface\\ChatFrame\\ChatFrameBackground")
+    topCap:SetVertexColor(0.18, 0.30, 0.45, 0.85)
+    topCap:SetPoint("TOP", scrollBar, "TOP", 0, 0)
+    topCap:SetWidth(8)
+    topCap:SetHeight(1)
+
+    local bottomCap = scrollBar:CreateTexture(nil, "ARTWORK")
+    bottomCap:SetTexture("Interface\\ChatFrame\\ChatFrameBackground")
+    bottomCap:SetVertexColor(0.18, 0.30, 0.45, 0.85)
+    bottomCap:SetPoint("BOTTOM", scrollBar, "BOTTOM", 0, 0)
+    bottomCap:SetWidth(8)
+    bottomCap:SetHeight(1)
+
+    scroll.BNPScrollBar = scrollBar
+    scrollBar.BNPOwner = scroll
+
+    function scroll:BNPRefreshScrollBar()
+      local child = self:GetScrollChild()
+      local childHeight = child and child:GetHeight() or 0
+      local maxScroll = childHeight - self:GetHeight()
+      if maxScroll < 0 then maxScroll = 0 end
+
+      if maxScroll > 0 then
+        local bar = self.BNPScrollBar
+        bar:SetMinMaxValues(0, maxScroll)
+
+        local value = self:GetVerticalScroll()
+        if value > maxScroll then
+          value = maxScroll
+          self:SetVerticalScroll(value)
+        end
+
+        bar.BNPSyncing = true
+        bar:SetValue(value)
+        bar.BNPSyncing = nil
+
+        local barThumb = bar:GetThumbTexture()
+        if barThumb and childHeight > 0 then
+          local thumbHeight = math.floor(self:GetHeight() * (self:GetHeight() / childHeight))
+          if thumbHeight < 34 then thumbHeight = 34 end
+          if thumbHeight > 82 then thumbHeight = 82 end
+          barThumb:SetHeight(thumbHeight)
+          if bar.BNPVisualThumb then bar.BNPVisualThumb:SetHeight(thumbHeight) end
+        end
+
+        bar:Show()
+      else
+        self:SetVerticalScroll(0)
+        self.BNPScrollBar:Hide()
+      end
+    end
+
+    function scroll:BNPScrollBy(delta)
+      local child = self:GetScrollChild()
+      local maxScroll = (child and child:GetHeight() or 0) - self:GetHeight()
+      if maxScroll < 0 then maxScroll = 0 end
+
+      local value = self:GetVerticalScroll() - ((delta or 0) * 34)
+      if value < 0 then value = 0 end
+      if value > maxScroll then value = maxScroll end
+      self:SetVerticalScroll(value)
+
+      if self.BNPScrollBar and self.BNPScrollBar:IsShown() then
+        self.BNPScrollBar.BNPSyncing = true
+        self.BNPScrollBar:SetValue(value)
+        self.BNPScrollBar.BNPSyncing = nil
+      end
+    end
+
+    scroll:SetScript("OnMouseWheel", function()
+      this:BNPScrollBy(arg1 or 0)
+    end)
+
+    scroll:SetScript("OnShow", function()
+      this:BNPRefreshScrollBar()
+    end)
+
+    scrollBar:SetScript("OnValueChanged", function()
+      if this.BNPSyncing then return end
+      local owner = this.BNPOwner
+      if owner then owner:SetVerticalScroll(arg1 or this:GetValue()) end
+    end)
+
+    scrollBar:SetScript("OnEnter", function()
+      local v = this.BNPVisualThumb
+      if v and v.BNPTexture then v.BNPTexture:SetVertexColor(0.38, 0.68, 1.00, 1) end
+    end)
+    scrollBar:SetScript("OnLeave", function()
+      local v = this.BNPVisualThumb
+      if v and v.BNPTexture then v.BNPTexture:SetVertexColor(0.28, 0.58, 0.96, 1) end
+    end)
+
     return page
   end
 
   local function CreateSection(parent, label, y)
-    local text = parent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    local text = parent:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     text:SetPoint("TOPLEFT", parent, "TOPLEFT", 8, y)
-    text:SetText(label)
+    text:SetText(string.upper(label))
+    text:SetTextColor(0.42, 0.68, 1.00)
 
     local line = parent:CreateTexture(nil, "ARTWORK")
-    line:SetTexture(1, 1, 1, 0.16)
-    line:SetPoint("LEFT", text, "RIGHT", 8, 0)
+    line:SetTexture("Interface\\ChatFrame\\ChatFrameBackground")
+    line:SetVertexColor(0.18, 0.30, 0.45, 0.75)
+    line:SetPoint("LEFT", text, "RIGHT", 10, 0)
     line:SetPoint("RIGHT", parent, "RIGHT", -8, 0)
     line:SetHeight(1)
 
@@ -890,78 +1125,207 @@ function BNP:CreateOptions()
     if enabled then
       if check.Enable then check:Enable() end
       check:SetAlpha(1.0)
-      if check.BNPLabel then check.BNPLabel:SetTextColor(1, 0.82, 0) end
+      if check.BNPLabel then check.BNPLabel:SetTextColor(0.90, 0.92, 0.95) end
     else
       if check.Disable then check:Disable() end
-      check:SetAlpha(0.45)
-      if check.BNPLabel then check.BNPLabel:SetTextColor(0.5, 0.5, 0.5) end
+      check:SetAlpha(0.38)
+      if check.BNPLabel then check.BNPLabel:SetTextColor(0.42, 0.45, 0.50) end
     end
   end
 
-  -- Compact tab navigation. The Icons page groups visual indicators that sit
-  -- on nameplates but do not belong to the debuff/CC state machine.
   frame.pages = {
-    nameplates = CreatePage(),
-    auras = CreatePage(),
-    totems = CreatePage(),
-    castbar = CreatePage(),
-    target = CreatePage(),
-    other = CreatePage(),
-    tools = CreatePage(),
+    nameplates = CreatePage(510),
+    personal = CreatePage(345),
+    auras = CreatePage(520),
+    totems = CreatePage(610),
+    castbar = CreatePage(300),
+    target = CreatePage(530),
+    other = CreatePage(550),
+    tools = CreatePage(160),
   }
   frame.tabs = {}
 
+  -- Keep page widths and scrollbars in sync with the user-resized window.
+  function frame:BNPRefreshResizableLayout()
+    local contentWidth = (self:GetWidth() or 650) - 204
+    if contentWidth < 396 then contentWidth = 396 end
+
+    local key, page
+    for key, page in pairs(self.pages or {}) do
+      if page and page.SetWidth then page:SetWidth(contentWidth) end
+      if page and page.BNPScrollFrame and page.BNPScrollFrame.BNPRefreshScrollBar then
+        page.BNPScrollFrame:BNPRefreshScrollBar()
+      end
+    end
+  end
+
+  local resizeGrip = CreateFrame("Button", "BNPOptionsResizeGrip", frame)
+  resizeGrip:SetWidth(20)
+  resizeGrip:SetHeight(20)
+  resizeGrip:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -3, 3)
+  resizeGrip:SetNormalTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
+  resizeGrip:SetHighlightTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Highlight")
+  resizeGrip:SetPushedTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Down")
+  resizeGrip:SetFrameLevel(frame:GetFrameLevel() + 20)
+
+  -- Some Vanilla/custom clients do not ship or render the old Blizzard
+  -- size-grabber textures. Draw a simple fallback marker so the resize corner
+  -- is always obvious regardless of UI scale or client texture set.
+  local resizeGripMark = resizeGrip:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  resizeGripMark:SetPoint("CENTER", resizeGrip, "CENTER", 1, -1)
+  resizeGripMark:SetText("///")
+  resizeGripMark:SetTextColor(0.42, 0.58, 0.76, 0.95)
+  if resizeGripMark.SetShadowColor then resizeGripMark:SetShadowColor(0, 0, 0, 1) end
+  if resizeGripMark.SetShadowOffset then resizeGripMark:SetShadowOffset(1, -1) end
+  resizeGrip.BNPMark = resizeGripMark
+
+  resizeGrip:SetScript("OnMouseDown", function()
+    if arg1 ~= "LeftButton" then return end
+    if frame.StartSizing then
+      frame.BNPIsResizing = true
+      frame:StartSizing("BOTTOMRIGHT")
+    end
+  end)
+
+  resizeGrip:SetScript("OnMouseUp", function()
+    if frame.StopMovingOrSizing then frame:StopMovingOrSizing() end
+    frame.BNPIsResizing = nil
+    frame:BNPRefreshResizableLayout()
+
+    BNP_DB = BNP_DB or {}
+    BNP_DB.optionsWidth = math.floor((frame:GetWidth() or 650) + 0.5)
+    BNP_DB.optionsHeight = math.floor((frame:GetHeight() or 438) + 0.5)
+  end)
+
+  resizeGrip:SetScript("OnUpdate", function()
+    if not frame.BNPIsResizing then return end
+    this.BNPTick = (this.BNPTick or 0) + arg1
+    if this.BNPTick < 0.04 then return end
+    this.BNPTick = 0
+    frame:BNPRefreshResizableLayout()
+  end)
+
+  resizeGrip:SetScript("OnEnter", function()
+    if this.BNPMark then this.BNPMark:SetTextColor(0.35, 0.72, 1.00, 1) end
+    GameTooltip:SetOwner(this, "ANCHOR_TOPLEFT")
+    GameTooltip:SetText("Resize Window", 1, 0.82, 0)
+    GameTooltip:AddLine("Drag this corner to change the menu size.", 1, 1, 1, true)
+    GameTooltip:Show()
+  end)
+  resizeGrip:SetScript("OnLeave", function()
+    if this.BNPMark then this.BNPMark:SetTextColor(0.42, 0.58, 0.76, 0.95) end
+    GameTooltip:Hide()
+  end)
+  frame.resizeGrip = resizeGrip
+  frame:BNPRefreshResizableLayout()
+
   local tabDefs = {
-    { key = "nameplates", label = "Nameplates", width = 72 },
-    { key = "auras", label = "Auras", width = 50 },
-    { key = "totems", label = "Icons", width = 52 },
-    { key = "castbar", label = "Castbar", width = 58 },
-    { key = "target", label = "Target", width = 54 },
-    { key = "other", label = "Other Debuffs", width = 84 },
-    { key = "tools", label = "Tools", width = 46 },
+    { key = "nameplates", label = "Nameplates" },
+    { key = "personal", label = "Personal" },
+    { key = "auras", label = "Auras" },
+    { key = "totems", label = "Icons & Marks" },
+    { key = "castbar", label = "Castbar" },
+    { key = "target", label = "Target" },
+    { key = "other", label = "Other Debuffs" },
+    { key = "tools", label = "Tools" },
   }
+
+  local function SetTabVisual(button, active, hovered)
+    if not button then return end
+    button.BNPActive = active and true or false
+    if active then
+      button.BNPBG:SetVertexColor(0.085, 0.14, 0.21, 1)
+      button.BNPAccent:Show()
+      button.BNPText:SetTextColor(0.96, 0.97, 1.00)
+    elseif hovered then
+      button.BNPBG:SetVertexColor(0.055, 0.075, 0.10, 1)
+      button.BNPAccent:Hide()
+      button.BNPText:SetTextColor(0.72, 0.82, 0.94)
+    else
+      button.BNPBG:SetVertexColor(0.025, 0.032, 0.045, 0.01)
+      button.BNPAccent:Hide()
+      button.BNPText:SetTextColor(0.58, 0.63, 0.70)
+    end
+  end
 
   function frame:ShowTab(key)
     local pageKey, page
     for pageKey, page in pairs(self.pages) do
-      if pageKey == key then page:Show() else page:Hide() end
+      if pageKey == key then
+        page:Show()
+        if page.BNPScrollFrame then
+          page.BNPScrollFrame:Show()
+          if page.BNPScrollFrame.BNPRefreshScrollBar then
+            page.BNPScrollFrame:BNPRefreshScrollBar()
+          end
+        end
+      else
+        page:Hide()
+        if page.BNPScrollFrame then
+          page.BNPScrollFrame:Hide()
+          if page.BNPScrollFrame.BNPScrollBar then page.BNPScrollFrame.BNPScrollBar:Hide() end
+        end
+      end
     end
 
     local i
     for i = 1, table.getn(tabDefs) do
       local def = tabDefs[i]
-      local button = self.tabs[def.key]
-      if button then
-        if def.key == key then
-          if button.Disable then button:Disable() end
-          button:SetAlpha(1.0)
-        else
-          if button.Enable then button:Enable() end
-          button:SetAlpha(0.80)
-        end
-      end
+      SetTabVisual(self.tabs[def.key], def.key == key, false)
     end
+
     self.selectedTab = key
     if key == "other" and self.RefreshOtherDebuffPage then
       self:RefreshOtherDebuffPage()
     end
   end
 
-  local tabX = 15
+  local navTitle = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  navTitle:SetPoint("TOPLEFT", frame, "TOPLEFT", 26, -98)
+  navTitle:SetText("SETTINGS")
+  navTitle:SetTextColor(0.36, 0.43, 0.52)
+
   local i
   for i = 1, table.getn(tabDefs) do
     local def = tabDefs[i]
-    local button = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-    button:SetWidth(def.width)
-    button:SetHeight(24)
-    button:SetPoint("TOPLEFT", frame, "TOPLEFT", tabX, -68)
-    button:SetText(def.label)
+    local button = CreateFrame("Button", nil, frame)
+    button:SetWidth(126)
+    button:SetHeight(34)
+    button:SetPoint("TOPLEFT", frame, "TOPLEFT", 20, -116 - ((i - 1) * 38))
     button.BNPTabKey = def.key
+
+    local bg = button:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints(button)
+    bg:SetTexture("Interface\\ChatFrame\\ChatFrameBackground")
+    button.BNPBG = bg
+
+    local accent = button:CreateTexture(nil, "ARTWORK")
+    accent:SetTexture("Interface\\ChatFrame\\ChatFrameBackground")
+    accent:SetVertexColor(0.19, 0.52, 0.92, 1)
+    accent:SetPoint("TOPLEFT", button, "TOPLEFT", 0, -4)
+    accent:SetPoint("BOTTOMLEFT", button, "BOTTOMLEFT", 0, 4)
+    accent:SetWidth(3)
+    accent:Hide()
+    button.BNPAccent = accent
+
+    local label = button:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    label:SetPoint("LEFT", button, "LEFT", 14, 0)
+    label:SetText(def.label)
+    label:SetJustifyH("LEFT")
+    button.BNPText = label
+
     button:SetScript("OnClick", function()
       frame:ShowTab(this.BNPTabKey)
     end)
+    button:SetScript("OnEnter", function()
+      if not this.BNPActive then SetTabVisual(this, false, true) end
+    end)
+    button:SetScript("OnLeave", function()
+      SetTabVisual(this, this.BNPActive, false)
+    end)
+
     frame.tabs[def.key] = button
-    tabX = tabX + def.width + 4
+    SetTabVisual(button, false, false)
   end
 
   -- NAMEPLATES TAB ---------------------------------------------------------
@@ -1165,6 +1529,7 @@ function BNP:CreateOptions()
   local healthTextLabel = nameplatesPage:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   healthTextLabel:SetPoint("TOPLEFT", nameplatesPage, "TOPLEFT", 28, -358)
   healthTextLabel:SetText("Display")
+  healthTextLabel:SetTextColor(1.00, 0.82, 0.00)
 
   local healthTextDropdown = CreateFrame("Frame", "BNPHealthTextDropdown", nameplatesPage, "UIDropDownMenuTemplate")
   healthTextDropdown:SetPoint("TOPLEFT", nameplatesPage, "TOPLEFT", 10, -370)
@@ -1205,6 +1570,7 @@ function BNP:CreateOptions()
   local healthOutlineLabel = nameplatesPage:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   healthOutlineLabel:SetPoint("TOPLEFT", nameplatesPage, "TOPLEFT", 220, -358)
   healthOutlineLabel:SetText("Outline")
+  healthOutlineLabel:SetTextColor(1.00, 0.82, 0.00)
 
   local healthOutlineDropdown = CreateFrame("Frame", "BNPHealthOutlineDropdown", nameplatesPage, "UIDropDownMenuTemplate")
   healthOutlineDropdown:SetPoint("TOPLEFT", nameplatesPage, "TOPLEFT", 200, -370)
@@ -1303,14 +1669,14 @@ function BNP:CreateOptions()
   end
 
   -- PERSONAL NAMEPLATE -----------------------------------------------------
-  -- Clean two-column grid: visibility, appearance, text/debuff positioning,
-  -- then plate scale/position. Rogue/Druid get a little extra window height
-  -- so the same layout stays intact below the Combo Points section.
-  local personalSectionY = comboOptionsClass and -500 or -448
-  CreateSection(nameplatesPage, "Personal Nameplate", personalSectionY)
+  -- Dedicated page with clear functional groups. Buff and debuff controls
+  -- intentionally use fixed columns so their X/Y sliders cannot be confused.
+  local personalPage = frame.pages.personal
 
-  -- Row 1: visibility.
-  local personalNameplate = CreateCheck(nameplatesPage, "Enable Personal Nameplate", personalSectionY - 24, function()
+  -- GENERAL ---------------------------------------------------------------
+  CreateSection(personalPage, "General", -4)
+
+  local personalNameplate = CreateCheck(personalPage, "Enable Personal Nameplate", -28, function()
     BNP_DB.personalNameplate = this:GetChecked() and true or false
     if BNP.RefreshPersonalNameplate then BNP:RefreshPersonalNameplate() end
     if frame.UpdateDependentControls then frame:UpdateDependentControls() end
@@ -1324,7 +1690,7 @@ function BNP:CreateOptions()
   personalNameplate:SetScript("OnLeave", function() GameTooltip:Hide() end)
   frame.personalNameplateCheck = personalNameplate
 
-  local personalCombatOnly = CreateCheck(nameplatesPage, "Combat Only", personalSectionY - 24, function()
+  local personalCombatOnly = CreateCheck(personalPage, "Combat Only", -28, function()
     BNP_DB.personalNameplateCombatOnly = this:GetChecked() and true or false
     if BNP.RefreshPersonalNameplate then BNP:RefreshPersonalNameplate() end
   end, 246)
@@ -1337,8 +1703,7 @@ function BNP:CreateOptions()
   personalCombatOnly:SetScript("OnLeave", function() GameTooltip:Hide() end)
   frame.personalNameplateCombatOnlyCheck = personalCombatOnly
 
-  -- Row 2: appearance.
-  local personalClassColor = CreateCheck(nameplatesPage, "Class Color", personalSectionY - 56, function()
+  local personalClassColor = CreateCheck(personalPage, "Class Color", -58, function()
     BNP_DB.personalNameplateClassColor = this:GetChecked() and true or false
     if BNP.RefreshPersonalNameplate then BNP:RefreshPersonalNameplate() end
   end, 22)
@@ -1351,7 +1716,7 @@ function BNP:CreateOptions()
   personalClassColor:SetScript("OnLeave", function() GameTooltip:Hide() end)
   frame.personalNameplateClassColorCheck = personalClassColor
 
-  local personalHideLevel = CreateCheck(nameplatesPage, "Hide Level", personalSectionY - 56, function()
+  local personalHideLevel = CreateCheck(personalPage, "Hide Level", -58, function()
     BNP_DB.personalNameplateHideLevel = this:GetChecked() and true or false
     if BNP.RefreshPersonalNameplate then BNP:RefreshPersonalNameplate() end
   end, 246)
@@ -1364,112 +1729,52 @@ function BNP:CreateOptions()
   personalHideLevel:SetScript("OnLeave", function() GameTooltip:Hide() end)
   frame.personalNameplateHideLevelCheck = personalHideLevel
 
-  -- Row 3: aura toggles. Buffs and debuffs are separate so either row can be
-  -- disabled without doing aura work for that type in the background.
-  local personalDebuffs = CreateCheck(nameplatesPage, "Show Debuffs", personalSectionY - 88, function()
-    BNP_DB.personalNameplateDebuffs = this:GetChecked() and true or false
-    if BNP.RefreshPersonalNameplate then BNP:RefreshPersonalNameplate() end
-  end, 22)
-  personalDebuffs:SetScript("OnEnter", function()
-    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
-    GameTooltip:SetText("Show Debuffs", 1, 0.82, 0)
-    GameTooltip:AddLine("Shows short combat debuffs on you above the Personal Nameplate. Long debuffs over 60 seconds are ignored.", 1, 1, 1, true)
-    GameTooltip:Show()
-  end)
-  personalDebuffs:SetScript("OnLeave", function() GameTooltip:Hide() end)
-  frame.personalNameplateDebuffsCheck = personalDebuffs
+  -- HEALTH & POSITION -----------------------------------------------------
+  CreateSection(personalPage, "Health & Position", -96)
 
-  local personalBuffs = CreateCheck(nameplatesPage, "Show Buffs", personalSectionY - 88, function()
-    BNP_DB.personalNameplateBuffs = this:GetChecked() and true or false
-    if BNP.RefreshPersonalNameplate then BNP:RefreshPersonalNameplate() end
-  end, 246)
-  personalBuffs:SetScript("OnEnter", function()
-    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
-    GameTooltip:SetText("Show Buffs", 1, 0.82, 0)
-    GameTooltip:AddLine("Shows short buffs such as Renew, Rejuvenation and shields. Long buffs over 60 seconds are ignored.", 1, 1, 1, true)
-    GameTooltip:Show()
-  end)
-  personalBuffs:SetScript("OnLeave", function() GameTooltip:Hide() end)
-  frame.personalNameplateBuffsCheck = personalBuffs
-
-  -- Row 4: text mode on the left, debuff Y offset on the right.
-  local personalHealthTextLabel = nameplatesPage:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-  personalHealthTextLabel:SetPoint("TOPLEFT", nameplatesPage, "TOPLEFT", 28, personalSectionY - 120)
+  local personalHealthTextLabel = personalPage:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  personalHealthTextLabel:SetPoint("TOPLEFT", personalPage, "TOPLEFT", 28, -120)
   personalHealthTextLabel:SetText("Health Text")
+  personalHealthTextLabel:SetTextColor(1.00, 0.82, 0.00)
   frame.personalNameplateHealthTextLabel = personalHealthTextLabel
 
-  local personalHealthTextDropdown = CreateFrame("Frame", "BNPPersonalHealthTextDropdown", nameplatesPage, "UIDropDownMenuTemplate")
-  personalHealthTextDropdown:SetPoint("TOPLEFT", nameplatesPage, "TOPLEFT", 10, personalSectionY - 132)
+  local personalHealthTextDropdown = CreateFrame("Frame", "BNPPersonalHealthTextDropdown", personalPage, "UIDropDownMenuTemplate")
+  personalHealthTextDropdown:SetPoint("TOPLEFT", personalPage, "TOPLEFT", 10, -132)
   UIDropDownMenu_SetWidth(142, personalHealthTextDropdown)
 
-  local personalDebuffYOffset = CreateSlider(nameplatesPage, "Debuff Y Offset", -100, 100, 1, personalSectionY - 132, 246, 150)
-  personalDebuffYOffset:SetScript("OnValueChanged", function()
+  local personalScale = CreateSlider(personalPage, "Scale", 0.70, 1.50, 0.05, -132, 246, 150)
+  personalScale:SetScript("OnValueChanged", function()
     if not BNP_DB then return end
-    local value = RoundSignedInteger(this:GetValue())
-    BNP_DB.personalNameplateDebuffYOffset = value
-    getglobal(this:GetName() .. "Text"):SetText("Debuff Y Offset: " .. (value > 0 and "+" or "") .. value)
+    local value = Round(this:GetValue(), 0.05)
+    BNP_DB.personalNameplateScale = value
+    getglobal(this:GetName() .. "Text"):SetText("Scale: " .. string.format("%.2f", value))
     if BNP.RefreshPersonalNameplate then BNP:RefreshPersonalNameplate() end
   end)
-  personalDebuffYOffset:SetScript("OnEnter", function()
+  personalScale:SetScript("OnEnter", function()
     GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
-    GameTooltip:SetText("Personal Debuff Y Offset", 1, 0.82, 0)
-    GameTooltip:AddLine("Moves the Personal Nameplate debuff row up or down without moving the plate itself.", 1, 1, 1, true)
+    GameTooltip:SetText("Personal Scale", 1, 0.82, 0)
+    GameTooltip:AddLine("Changes the size of the Personal Nameplate only.", 1, 1, 1, true)
     GameTooltip:Show()
   end)
-  personalDebuffYOffset:SetScript("OnLeave", function() GameTooltip:Hide() end)
-  frame.personalNameplateDebuffYOffsetSlider = personalDebuffYOffset
+  personalScale:SetScript("OnLeave", function() GameTooltip:Hide() end)
+  frame.personalNameplateScaleSlider = personalScale
 
-  -- Row 5: Buff Y on the left, Debuff X on the right.
-  local personalBuffYOffset = CreateSlider(nameplatesPage, "Buff Y Offset", -100, 100, 1, personalSectionY - 176, 28, 150)
-  personalBuffYOffset:SetScript("OnValueChanged", function()
+  local personalYOffset = CreateSlider(personalPage, "Y Offset", -250, 150, 5, -174, 28, 150)
+  personalYOffset:SetScript("OnValueChanged", function()
     if not BNP_DB then return end
-    local value = RoundSignedInteger(this:GetValue())
-    BNP_DB.personalNameplateBuffYOffset = value
-    getglobal(this:GetName() .. "Text"):SetText("Buff Y Offset: " .. (value > 0 and "+" or "") .. value)
+    local value = RoundSignedInteger(this:GetValue() / 5) * 5
+    BNP_DB.personalNameplateYOffset = value
+    getglobal(this:GetName() .. "Text"):SetText("Y Offset: " .. (value > 0 and "+" or "") .. value)
     if BNP.RefreshPersonalNameplate then BNP:RefreshPersonalNameplate() end
   end)
-  personalBuffYOffset:SetScript("OnEnter", function()
+  personalYOffset:SetScript("OnEnter", function()
     GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
-    GameTooltip:SetText("Personal Buff Y Offset", 1, 0.82, 0)
-    GameTooltip:AddLine("Moves the Personal Nameplate buff row up or down independently from debuffs.", 1, 1, 1, true)
+    GameTooltip:SetText("Personal Y Offset", 1, 0.82, 0)
+    GameTooltip:AddLine("Moves the Personal Nameplate up or down below your character.", 1, 1, 1, true)
     GameTooltip:Show()
   end)
-  personalBuffYOffset:SetScript("OnLeave", function() GameTooltip:Hide() end)
-  frame.personalNameplateBuffYOffsetSlider = personalBuffYOffset
-
-  local personalDebuffXOffset = CreateSlider(nameplatesPage, "Debuff X Offset", -100, 100, 1, personalSectionY - 176, 246, 150)
-  personalDebuffXOffset:SetScript("OnValueChanged", function()
-    if not BNP_DB then return end
-    local value = RoundSignedInteger(this:GetValue())
-    BNP_DB.personalNameplateDebuffXOffset = value
-    getglobal(this:GetName() .. "Text"):SetText("Debuff X Offset: " .. (value > 0 and "+" or "") .. value)
-    if BNP.RefreshPersonalNameplate then BNP:RefreshPersonalNameplate() end
-  end)
-  personalDebuffXOffset:SetScript("OnEnter", function()
-    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
-    GameTooltip:SetText("Personal Debuff X Offset", 1, 0.82, 0)
-    GameTooltip:AddLine("Moves the Personal Nameplate debuff row left or right so it does not run into the buff row or other UI.", 1, 1, 1, true)
-    GameTooltip:Show()
-  end)
-  personalDebuffXOffset:SetScript("OnLeave", function() GameTooltip:Hide() end)
-  frame.personalNameplateDebuffXOffsetSlider = personalDebuffXOffset
-
-  local personalBuffXOffset = CreateSlider(nameplatesPage, "Buff X Offset", -100, 100, 1, personalSectionY - 220, 28, 150)
-  personalBuffXOffset:SetScript("OnValueChanged", function()
-    if not BNP_DB then return end
-    local value = RoundSignedInteger(this:GetValue())
-    BNP_DB.personalNameplateBuffXOffset = value
-    getglobal(this:GetName() .. "Text"):SetText("Buff X Offset: " .. (value > 0 and "+" or "") .. value)
-    if BNP.RefreshPersonalNameplate then BNP:RefreshPersonalNameplate() end
-  end)
-  personalBuffXOffset:SetScript("OnEnter", function()
-    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
-    GameTooltip:SetText("Personal Buff X Offset", 1, 0.82, 0)
-    GameTooltip:AddLine("Moves the Personal Nameplate buff row left or right independently from debuffs.", 1, 1, 1, true)
-    GameTooltip:Show()
-  end)
-  personalBuffXOffset:SetScript("OnLeave", function() GameTooltip:Hide() end)
-  frame.personalNameplateBuffXOffsetSlider = personalBuffXOffset
+  personalYOffset:SetScript("OnLeave", function() GameTooltip:Hide() end)
+  frame.personalNameplateYOffsetSlider = personalYOffset
 
   local personalHealthModeLabels = {
     off = "Off",
@@ -1509,47 +1814,119 @@ function BNP:CreateOptions()
   frame.personalNameplateHealthTextDropdown = personalHealthTextDropdown
   frame.SetPersonalHealthTextMode = SetPersonalHealthTextMode
 
-  -- Row 6: remaining aura offset on the left and plate scale on the right.
-  local personalScale = CreateSlider(nameplatesPage, "Scale", 0.70, 1.50, 0.05, personalSectionY - 220, 246, 150)
-  personalScale:SetScript("OnValueChanged", function()
-    if not BNP_DB then return end
-    local value = Round(this:GetValue(), 0.05)
-    BNP_DB.personalNameplateScale = value
-    getglobal(this:GetName() .. "Text"):SetText("Scale: " .. string.format("%.2f", value))
-    if BNP.RefreshPersonalNameplate then BNP:RefreshPersonalNameplate() end
-  end)
-  personalScale:SetScript("OnEnter", function()
-    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
-    GameTooltip:SetText("Personal Scale", 1, 0.82, 0)
-    GameTooltip:AddLine("Changes the size of the Personal Nameplate only.", 1, 1, 1, true)
-    GameTooltip:Show()
-  end)
-  personalScale:SetScript("OnLeave", function() GameTooltip:Hide() end)
-  frame.personalNameplateScaleSlider = personalScale
+  -- AURAS -----------------------------------------------------------------
+  CreateSection(personalPage, "Auras", -214)
 
-  -- Row 7: plate position.
-  local personalYOffset = CreateSlider(nameplatesPage, "Y Offset", -250, 150, 5, personalSectionY - 264, 28, 150)
-  personalYOffset:SetScript("OnValueChanged", function()
-    if not BNP_DB then return end
-    local value = RoundSignedInteger(this:GetValue() / 5) * 5
-    BNP_DB.personalNameplateYOffset = value
-    getglobal(this:GetName() .. "Text"):SetText("Y Offset: " .. (value > 0 and "+" or "") .. value)
+  -- Fixed columns make it immediately obvious which offsets belong together.
+  local buffHeading = personalPage:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  buffHeading:SetPoint("TOPLEFT", personalPage, "TOPLEFT", 28, -238)
+  buffHeading:SetText("BUFFS")
+  buffHeading:SetTextColor(0.72, 0.82, 0.94)
+
+  local debuffHeading = personalPage:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  debuffHeading:SetPoint("TOPLEFT", personalPage, "TOPLEFT", 246, -238)
+  debuffHeading:SetText("DEBUFFS")
+  debuffHeading:SetTextColor(0.72, 0.82, 0.94)
+
+  local personalBuffs = CreateCheck(personalPage, "Show Buffs", -252, function()
+    BNP_DB.personalNameplateBuffs = this:GetChecked() and true or false
     if BNP.RefreshPersonalNameplate then BNP:RefreshPersonalNameplate() end
-  end)
-  personalYOffset:SetScript("OnEnter", function()
+  end, 22)
+  personalBuffs:SetScript("OnEnter", function()
     GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
-    GameTooltip:SetText("Personal Y Offset", 1, 0.82, 0)
-    GameTooltip:AddLine("Moves the Personal Nameplate up or down below your character.", 1, 1, 1, true)
+    GameTooltip:SetText("Show Buffs", 1, 0.82, 0)
+    GameTooltip:AddLine("Shows short buffs such as Renew, Rejuvenation and shields. Long buffs over 60 seconds are ignored.", 1, 1, 1, true)
     GameTooltip:Show()
   end)
-  personalYOffset:SetScript("OnLeave", function() GameTooltip:Hide() end)
-  frame.personalNameplateYOffsetSlider = personalYOffset
+  personalBuffs:SetScript("OnLeave", function() GameTooltip:Hide() end)
+  frame.personalNameplateBuffsCheck = personalBuffs
+
+  local personalDebuffs = CreateCheck(personalPage, "Show Debuffs", -252, function()
+    BNP_DB.personalNameplateDebuffs = this:GetChecked() and true or false
+    if BNP.RefreshPersonalNameplate then BNP:RefreshPersonalNameplate() end
+  end, 240)
+  personalDebuffs:SetScript("OnEnter", function()
+    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+    GameTooltip:SetText("Show Debuffs", 1, 0.82, 0)
+    GameTooltip:AddLine("Shows short combat debuffs on you above the Personal Nameplate. Long debuffs over 60 seconds are ignored.", 1, 1, 1, true)
+    GameTooltip:Show()
+  end)
+  personalDebuffs:SetScript("OnLeave", function() GameTooltip:Hide() end)
+  frame.personalNameplateDebuffsCheck = personalDebuffs
+
+  local personalBuffXOffset = CreateSlider(personalPage, "Buff X Offset", -100, 100, 1, -286, 28, 150)
+  personalBuffXOffset:SetScript("OnValueChanged", function()
+    if not BNP_DB then return end
+    local value = RoundSignedInteger(this:GetValue())
+    BNP_DB.personalNameplateBuffXOffset = value
+    getglobal(this:GetName() .. "Text"):SetText("Buff X Offset: " .. (value > 0 and "+" or "") .. value)
+    if BNP.RefreshPersonalNameplate then BNP:RefreshPersonalNameplate() end
+  end)
+  personalBuffXOffset:SetScript("OnEnter", function()
+    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+    GameTooltip:SetText("Personal Buff X Offset", 1, 0.82, 0)
+    GameTooltip:AddLine("Moves the Personal Nameplate buff row left or right independently from debuffs.", 1, 1, 1, true)
+    GameTooltip:Show()
+  end)
+  personalBuffXOffset:SetScript("OnLeave", function() GameTooltip:Hide() end)
+  frame.personalNameplateBuffXOffsetSlider = personalBuffXOffset
+
+  local personalDebuffXOffset = CreateSlider(personalPage, "Debuff X Offset", -100, 100, 1, -286, 246, 150)
+  personalDebuffXOffset:SetScript("OnValueChanged", function()
+    if not BNP_DB then return end
+    local value = RoundSignedInteger(this:GetValue())
+    BNP_DB.personalNameplateDebuffXOffset = value
+    getglobal(this:GetName() .. "Text"):SetText("Debuff X Offset: " .. (value > 0 and "+" or "") .. value)
+    if BNP.RefreshPersonalNameplate then BNP:RefreshPersonalNameplate() end
+  end)
+  personalDebuffXOffset:SetScript("OnEnter", function()
+    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+    GameTooltip:SetText("Personal Debuff X Offset", 1, 0.82, 0)
+    GameTooltip:AddLine("Moves the Personal Nameplate debuff row left or right so it does not run into the buff row or other UI.", 1, 1, 1, true)
+    GameTooltip:Show()
+  end)
+  personalDebuffXOffset:SetScript("OnLeave", function() GameTooltip:Hide() end)
+  frame.personalNameplateDebuffXOffsetSlider = personalDebuffXOffset
+
+  local personalBuffYOffset = CreateSlider(personalPage, "Buff Y Offset", -100, 100, 1, -324, 28, 150)
+  personalBuffYOffset:SetScript("OnValueChanged", function()
+    if not BNP_DB then return end
+    local value = RoundSignedInteger(this:GetValue())
+    BNP_DB.personalNameplateBuffYOffset = value
+    getglobal(this:GetName() .. "Text"):SetText("Buff Y Offset: " .. (value > 0 and "+" or "") .. value)
+    if BNP.RefreshPersonalNameplate then BNP:RefreshPersonalNameplate() end
+  end)
+  personalBuffYOffset:SetScript("OnEnter", function()
+    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+    GameTooltip:SetText("Personal Buff Y Offset", 1, 0.82, 0)
+    GameTooltip:AddLine("Moves the Personal Nameplate buff row up or down independently from debuffs.", 1, 1, 1, true)
+    GameTooltip:Show()
+  end)
+  personalBuffYOffset:SetScript("OnLeave", function() GameTooltip:Hide() end)
+  frame.personalNameplateBuffYOffsetSlider = personalBuffYOffset
+
+  local personalDebuffYOffset = CreateSlider(personalPage, "Debuff Y Offset", -100, 100, 1, -324, 246, 150)
+  personalDebuffYOffset:SetScript("OnValueChanged", function()
+    if not BNP_DB then return end
+    local value = RoundSignedInteger(this:GetValue())
+    BNP_DB.personalNameplateDebuffYOffset = value
+    getglobal(this:GetName() .. "Text"):SetText("Debuff Y Offset: " .. (value > 0 and "+" or "") .. value)
+    if BNP.RefreshPersonalNameplate then BNP:RefreshPersonalNameplate() end
+  end)
+  personalDebuffYOffset:SetScript("OnEnter", function()
+    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+    GameTooltip:SetText("Personal Debuff Y Offset", 1, 0.82, 0)
+    GameTooltip:AddLine("Moves the Personal Nameplate debuff row up or down without moving the plate itself.", 1, 1, 1, true)
+    GameTooltip:Show()
+  end)
+  personalDebuffYOffset:SetScript("OnLeave", function() GameTooltip:Hide() end)
+  frame.personalNameplateDebuffYOffsetSlider = personalDebuffYOffset
 
   -- AURAS TAB --------------------------------------------------------------
   local aurasPage = frame.pages.auras
   CreateSection(aurasPage, "Debuffs", -4)
 
-  local icon = CreateSlider(aurasPage, "Aura Icon Size", 12, 32, 1, -78, 28, 150)
+  local icon = CreateSlider(aurasPage, "Aura Icon Size", 12, 32, 1, -92, 28, 150)
   icon:SetScript("OnValueChanged", function()
     if not BNP_DB then return end
     local value = math.floor(this:GetValue() + 0.5)
@@ -1561,7 +1938,7 @@ function BNP:CreateOptions()
   end)
   frame.iconSlider = icon
 
-  local auraFontSize = CreateSlider(aurasPage, "Aura Font Size", 6, 18, 1, -124, 28, 150)
+  local auraFontSize = CreateSlider(aurasPage, "Aura Font Size", 6, 18, 1, -138, 28, 150)
   auraFontSize:SetScript("OnValueChanged", function()
     if not BNP_DB then return end
     local value = math.floor(this:GetValue() + 0.5)
@@ -1571,12 +1948,12 @@ function BNP:CreateOptions()
   end)
   frame.auraFontSizeSlider = auraFontSize
 
-  frame.cooldownSpiralCheck = CreateCheck(aurasPage, "Cooldown Spiral", -126, function()
+  frame.cooldownSpiralCheck = CreateCheck(aurasPage, "Cooldown Spiral", -136, function()
     BNP_DB.cooldownSpiral = this:GetChecked() and true or false
     if BNP.RefreshAuraCooldownSpirals then BNP:RefreshAuraCooldownSpirals() end
   end, 208)
 
-  local debuffYOffset = CreateSlider(aurasPage, "Debuff Y Offset", -50, 50, 1, -78, 220, 150)
+  local debuffYOffset = CreateSlider(aurasPage, "Debuff Y Offset", -50, 50, 1, -92, 220, 150)
   debuffYOffset:SetScript("OnValueChanged", function()
     if not BNP_DB then return end
     local value = RoundSignedInteger(this:GetValue())
@@ -1589,7 +1966,7 @@ function BNP:CreateOptions()
   end)
   frame.debuffYOffsetSlider = debuffYOffset
 
-  local ccIcon = CreateSlider(aurasPage, "CC Icon Size", 12, 32, 1, -230, 28, 150)
+  local ccIcon = CreateSlider(aurasPage, "CC Icon Size", 12, 32, 1, -270, 28, 150)
   ccIcon:SetScript("OnValueChanged", function()
     if not BNP_DB then return end
     local value = math.floor(this:GetValue() + 0.5)
@@ -1601,7 +1978,7 @@ function BNP:CreateOptions()
   end)
   frame.ccIconSlider = ccIcon
 
-  local ccYOffset = CreateSlider(aurasPage, "CC Y Offset", -50, 50, 1, -230, 220, 150)
+  local ccYOffset = CreateSlider(aurasPage, "CC Y Offset", -50, 50, 1, -270, 220, 150)
   ccYOffset:SetScript("OnValueChanged", function()
     if not BNP_DB then return end
     local value = RoundSignedInteger(this:GetValue())
@@ -1614,7 +1991,7 @@ function BNP:CreateOptions()
   end)
   frame.ccYOffsetSlider = ccYOffset
 
-  local debuffs = CreateCheck(aurasPage, "Enable Debuffs", -30, function()
+  local debuffs = CreateCheck(aurasPage, "Enable Debuffs", -40, function()
     BNP_DB.debuffs = this:GetChecked() and true or false
     if BNP.RefreshDebuffVisibility then BNP:RefreshDebuffVisibility() end
     if frame.UpdateDependentControls then frame:UpdateDependentControls() end
@@ -1624,7 +2001,7 @@ function BNP:CreateOptions()
   frame.debuffsCheck = debuffs
 
   local debuffPositionDropdown = CreateFrame("Frame", "BNPDebuffPositionDropdown", aurasPage, "UIDropDownMenuTemplate")
-  debuffPositionDropdown:SetPoint("TOPLEFT", aurasPage, "TOPLEFT", 188, -24)
+  debuffPositionDropdown:SetPoint("TOPLEFT", aurasPage, "TOPLEFT", 188, -44)
   UIDropDownMenu_SetWidth(112, debuffPositionDropdown)
 
   local debuffPositionLabels = {
@@ -1667,14 +2044,15 @@ function BNP:CreateOptions()
   frame.debuffPositionDropdown = debuffPositionDropdown
   frame.SetDebuffPosition = SetDebuffPosition
 
-  local debuffPositionLabel = aurasPage:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  local debuffPositionLabel = aurasPage:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   debuffPositionLabel:SetPoint("BOTTOMLEFT", debuffPositionDropdown, "TOPLEFT", 18, 5)
   debuffPositionLabel:SetText("Debuff Position")
+  debuffPositionLabel:SetTextColor(1.00, 0.82, 0.00)
   frame.debuffPositionLabel = debuffPositionLabel
 
-  CreateSection(aurasPage, "Crowd Control", -156)
+  CreateSection(aurasPage, "Crowd Control", -184)
 
-  local crowdControl = CreateCheck(aurasPage, "Enable Crowd Control", -182, function()
+  local crowdControl = CreateCheck(aurasPage, "Enable Crowd Control", -218, function()
     BNP_DB.crowdControl = this:GetChecked() and true or false
     if BNP.RefreshDebuffVisibility then BNP:RefreshDebuffVisibility() end
     if BNP.RefreshAllImmunityLayouts then BNP:RefreshAllImmunityLayouts() end
@@ -1684,7 +2062,7 @@ function BNP:CreateOptions()
   frame.crowdControlCheck = crowdControl
 
   local ccPositionDropdown = CreateFrame("Frame", "BNPCCPositionDropdown", aurasPage, "UIDropDownMenuTemplate")
-  ccPositionDropdown:SetPoint("TOPLEFT", aurasPage, "TOPLEFT", 188, -176)
+  ccPositionDropdown:SetPoint("TOPLEFT", aurasPage, "TOPLEFT", 188, -222)
   UIDropDownMenu_SetWidth(92, ccPositionDropdown)
 
   local ccPositionLabels = {
@@ -1720,12 +2098,13 @@ function BNP:CreateOptions()
   frame.ccPositionDropdown = ccPositionDropdown
   frame.SetCCPosition = SetCCPosition
 
-  local ccPositionLabel = aurasPage:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  local ccPositionLabel = aurasPage:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   ccPositionLabel:SetPoint("BOTTOMLEFT", ccPositionDropdown, "TOPLEFT", 18, 5)
   ccPositionLabel:SetText("CC Position")
+  ccPositionLabel:SetTextColor(1.00, 0.82, 0.00)
   frame.ccPositionLabel = ccPositionLabel
 
-  local separateCCRow = CreateCheck(aurasPage, "Display CCs in Separate Row", -264, function()
+  local separateCCRow = CreateCheck(aurasPage, "Display CCs in Separate Row", -312, function()
     BNP_DB.separateCCRow = this:GetChecked() and true or false
     if BNP.RefreshAllAuraLayouts then BNP:RefreshAllAuraLayouts() end
     if BNP.RefreshAllImmunityLayouts then BNP:RefreshAllImmunityLayouts() end
@@ -1734,15 +2113,15 @@ function BNP:CreateOptions()
   end, 42)
   frame.separateCCRowCheck = separateCCRow
 
-  local showOtherCCs = CreateCheck(aurasPage, "Show CCs from Other Players", -290, function()
+  local showOtherCCs = CreateCheck(aurasPage, "Show CCs from Other Players", -340, function()
     BNP_DB.showOtherCCs = this:GetChecked() and true or false
     if BNP.RefreshDebuffVisibility then BNP:RefreshDebuffVisibility() end
   end, 42)
   frame.showOtherCCsCheck = showOtherCCs
 
-  CreateSection(aurasPage, "Immunities / Important Buffs", -328)
+  CreateSection(aurasPage, "Immunities / Important Buffs", -382)
 
-  local pvpImmunities = CreateCheck(aurasPage, "Enable PvP Immunities", -354, function()
+  local pvpImmunities = CreateCheck(aurasPage, "Enable PvP Immunities", -416, function()
     BNP_DB.pvpImmunities = this:GetChecked() and true or false
     if BNP.RefreshImmunityVisibility then BNP:RefreshImmunityVisibility() end
     if frame.UpdateDependentControls then frame:UpdateDependentControls() end
@@ -1751,7 +2130,7 @@ function BNP:CreateOptions()
   frame.pvpImmunitiesCheck = pvpImmunities
 
   local immunityPositionDropdown = CreateFrame("Frame", "BNPImmunityPositionDropdown", aurasPage, "UIDropDownMenuTemplate")
-  immunityPositionDropdown:SetPoint("TOPLEFT", aurasPage, "TOPLEFT", 188, -348)
+  immunityPositionDropdown:SetPoint("TOPLEFT", aurasPage, "TOPLEFT", 188, -420)
   UIDropDownMenu_SetWidth(92, immunityPositionDropdown)
 
   local immunityPositionLabels = {
@@ -1785,12 +2164,13 @@ function BNP:CreateOptions()
   frame.immunityPositionDropdown = immunityPositionDropdown
   frame.SetImmunityPosition = SetImmunityPosition
 
-  local immunityPositionLabel = aurasPage:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  local immunityPositionLabel = aurasPage:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   immunityPositionLabel:SetPoint("BOTTOMLEFT", immunityPositionDropdown, "TOPLEFT", 18, 5)
   immunityPositionLabel:SetText("Immunity Position")
+  immunityPositionLabel:SetTextColor(1.00, 0.82, 0.00)
   frame.immunityPositionLabel = immunityPositionLabel
 
-  local immunityIcon = CreateSlider(aurasPage, "Immunity Icon Size", 12, 32, 1, -402, 28, 150)
+  local immunityIcon = CreateSlider(aurasPage, "Immunity Icon Size", 12, 32, 1, -468, 28, 150)
   immunityIcon:SetScript("OnValueChanged", function()
     if not BNP_DB then return end
     local value = math.floor(this:GetValue() + 0.5)
@@ -1801,7 +2181,7 @@ function BNP:CreateOptions()
   end)
   frame.immunityIconSlider = immunityIcon
 
-  local immunityYOffset = CreateSlider(aurasPage, "Immunity Y Offset", -50, 50, 1, -402, 220, 150)
+  local immunityYOffset = CreateSlider(aurasPage, "Immunity Y Offset", -50, 50, 1, -468, 220, 150)
   immunityYOffset:SetScript("OnValueChanged", function()
     if not BNP_DB then return end
     local value = RoundSignedInteger(this:GetValue())
@@ -1847,6 +2227,7 @@ function BNP:CreateOptions()
   local raidMarkPositionLabel = totemsPage:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   raidMarkPositionLabel:SetPoint("TOPLEFT", totemsPage, "TOPLEFT", 28, -202)
   raidMarkPositionLabel:SetText("Raid Mark Position")
+  raidMarkPositionLabel:SetTextColor(1.00, 0.82, 0.00)
   frame.raidMarkPositionLabel = raidMarkPositionLabel
 
   local raidMarkPositionDropdown = CreateFrame("Frame", "BNPRaidMarkPositionDropdown", totemsPage, "UIDropDownMenuTemplate")
@@ -1998,6 +2379,7 @@ function BNP:CreateOptions()
   local castbarStyleLabel = castbarPage:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   castbarStyleLabel:SetPoint("TOPLEFT", castbarPage, "TOPLEFT", 28, -82)
   castbarStyleLabel:SetText("Castbar Style")
+  castbarStyleLabel:SetTextColor(1.00, 0.82, 0.00)
 
   local castbarStyleDropdown = CreateFrame("Frame", "BNPCastbarStyleDropdown", castbarPage, "UIDropDownMenuTemplate")
   castbarStyleDropdown:SetPoint("TOPLEFT", castbarPage, "TOPLEFT", 10, -94)
@@ -2155,6 +2537,7 @@ function BNP:CreateOptions()
   local arrowStyleLabel = targetPage:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   arrowStyleLabel:SetPoint("TOPLEFT", targetPage, "TOPLEFT", 210, -88)
   arrowStyleLabel:SetText("Arrow Style")
+  arrowStyleLabel:SetTextColor(1.00, 0.82, 0.00)
   frame.arrowStyleLabel = arrowStyleLabel
 
   local arrowStyleDropdown = CreateFrame("Frame", "BNPTargetArrowStyleDropdown", targetPage, "UIDropDownMenuTemplate")
@@ -2411,7 +2794,7 @@ function BNP:CreateOptions()
       if self.immunityYOffsetSlider.EnableMouse then self.immunityYOffsetSlider:EnableMouse(immunitiesEnabled) end
     end
     if self.immunityPositionLabel then
-      self.immunityPositionLabel:SetTextColor(immunitiesEnabled and 1 or 0.5, immunitiesEnabled and 1 or 0.5, immunitiesEnabled and 1 or 0.5)
+      self.immunityPositionLabel:SetTextColor(immunitiesEnabled and 1 or 0.5, immunitiesEnabled and 0.82 or 0.5, immunitiesEnabled and 0 or 0.5)
     end
     if self.immunityPositionDropdown then
       self.immunityPositionDropdown:SetAlpha(immunitiesEnabled and 1.0 or 0.45)

@@ -1,5 +1,5 @@
 BNP = BNP or {}
-BNP.version = "1.1.0"
+BNP.version = "2.0.0"
 BNP.plates = BNP.plates or {}
 BNP.detected = 0
 BNP.debugEnabled = false
