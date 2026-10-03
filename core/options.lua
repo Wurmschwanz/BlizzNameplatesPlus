@@ -1026,6 +1026,17 @@ function BNP:CreateOptions()
     scrollBar.BNPOwner = scroll
 
     function scroll:BNPRefreshScrollBar()
+      -- Each settings page owns its own scrollbar, but all scrollbar frames
+      -- are parented to the main options window. During a window resize the
+      -- layout refresh runs for every page, including hidden tabs. Without
+      -- this guard those hidden pages could briefly show their own thumbs,
+      -- which looked like extra static sliders above/below the real one.
+      -- Only the currently visible ScrollFrame may ever show its scrollbar.
+      if not self:IsShown() then
+        if self.BNPScrollBar then self.BNPScrollBar:Hide() end
+        return
+      end
+
       local child = self:GetScrollChild()
       local childHeight = child and child:GetHeight() or 0
       local maxScroll = childHeight - self:GetHeight()
