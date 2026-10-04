@@ -35,27 +35,32 @@ local function HasCachedControl(plate, guid, now)
     BNP:PrimeTankControlSnapshot(plate, guid, now)
   end
   if plate.BNPTankControlGUID == guid and plate.BNPClassicAuraEventDriven then
-    return plate.BNPTankControlled and true or false
+    return plate.BNPTankControlled and true or false, plate.BNPTankChargeStun and true or false
   end
   local cache = BNP.guidAuras and BNP.guidAuras[guid]
+  local controlled = false
   local key, aura
   if cache then
     for key, aura in pairs(cache) do
-      if BNP.TankDisablingCC[key] and aura.expires and aura.expires > now then return true end
+      if BNP.TankDisablingCC[key] and aura.expires and aura.expires > now then
+        controlled = true
+        if key == "charge_stun" then return true, true end
+      end
     end
   end
   cache = BNP.guidLiveCCs and BNP.guidLiveCCs[guid]
   if cache then
     for key, aura in pairs(cache) do
       if BNP.TankDisablingCC[key] and (aura.eventDriven or now - (aura.lastSeen or 0) <= 0.60) then
-        return true
+        controlled = true
+        if key == "charge_stun" and aura.expires and aura.expires > now then return true, true end
       end
     end
   end
-  return false
+  return controlled, false
 end
 
-local function IsTemporarilyInactive(plate, guid, now)
+local function IsTemporarilyInactive(plate, guid, now, targetExists)
   -- One optional descriptor read covers combat, stun, confusion and fleeing,
   -- including low-health fleeing with a retained target. No tooltip/aura scan.
   local flags
@@ -66,13 +71,29 @@ local function IsTemporarilyInactive(plate, guid, now)
   local inCombat
   if flags then inCombat = HasFlag(flags, 524288)
   else inCombat = UnitAffectingCombat and UnitAffectingCombat(guid) end
-  if not inCombat then return false end
+  if not inCombat then
+    -- Do not wait for the combat flag when the actual opening Charge stun
+    -- is already in the harmful-aura snapshot. Pre-pull sheep/sap stay out.
+    local controlled, chargeStun = HasCachedControl(plate, guid, now)
+    return controlled and chargeStun
+  end
   if flags and (HasFlag(flags, 262144) or HasFlag(flags, 4194304) or HasFlag(flags, 8388608)) then
     return true
   end
-  -- A missing target alone is not evidence of CC or fleeing. It also occurs
-  -- during death, pet return and ordinary target switches.
-  return HasCachedControl(plate, guid, now)
+  if HasCachedControl(plate, guid, now) then return true end
+
+  -- Fleeing to seek assistance can clear the target without a CC aura or a
+  -- fleeing flag, and GetUnitField is optional (Nampower). Keep this fallback
+  -- deliberately narrow: in combat, no target, alive, <= 30% HP, not casting.
+  -- This is a heuristic, not proof of fleeing. No per-frame scan or timer.
+  if targetExists or not UnitHealth or not UnitHealthMax then return false end
+  local health = UnitHealth(guid)
+  if not health or health <= 0 then return false end
+  local maximum = UnitHealthMax(guid)
+  if not maximum or maximum <= 0 or health / maximum > 0.30 then return false end
+  if UnitCastingInfo and UnitCastingInfo(guid) then return false end
+  if UnitChannelInfo and UnitChannelInfo(guid) then return false end
+  return true
 end
 
 local playerGUID = nil
@@ -99,10 +120,11 @@ local function GetPlateGUID(plate)
 end
 
 local function GetTargetGUID(guid)
-  if not guid then return nil end
+  if not guid then return nil, false end
   local exists, targetGUID = UnitExists(guid .. "target")
-  if exists then return targetGUID end
-  return nil
+  -- An existing target whose GUID is temporarily unavailable is not "none".
+  if exists then return targetGUID, true end
+  return nil, false
 end
 
 local function GetBar(plate)
@@ -246,9 +268,9 @@ function BNP:UpdateTankModePlate(plate)
   local myGUID = GetPlayerGUID()
   if not myGUID then return end
 
-  local targetGUID = GetTargetGUID(guid)
+  local targetGUID, targetExists = GetTargetGUID(guid)
   local now = thirdColor and GetTime()
-  if thirdColor and IsTemporarilyInactive(plate, guid, now) then
+  if thirdColor and IsTemporarilyInactive(plate, guid, now, targetExists) then
     local r, g, b = self:GetTankNoTargetColor()
     ApplyTankColor(plate, bar, r, g, b)
     plate.BNPTankNoTargetActive = true
@@ -298,6 +320,7 @@ function BNP:UpdateTankMode()
     for plate in pairs(self.plates or {}) do
       plate.BNPTankControlGUID = nil
       plate.BNPTankControlled = nil
+      plate.BNPTankChargeStun = nil
     end
   end
   self:RefreshTankMode()
@@ -339,6 +362,7 @@ function BNP:InstallTankMode()
     ClearTankState(current)
     current.BNPTankControlGUID = nil
     current.BNPTankControlled = nil
+    current.BNPTankChargeStun = nil
     BNP:UpdateTankModePlate(current)
   end)
 

@@ -604,7 +604,13 @@ function BNP:MaintainNameplateYOffset(plate)
   local states = wrapper.BNPAnchorStates or {}
   local i
   for i = 1, table.getn(states) do
-    RestoreAnchorState(states[i], wrapper)
+    local state = states[i]
+    -- Raid marks own their custom Top/Left/Right anchor. Restoring the native
+    -- anchor here every frame fights raidmarks.lua and makes the icon jump
+    -- between both positions whenever the nameplate Y offset is enabled.
+    if state.object ~= plate.raidicon or not self.MaintainRaidMarkPosition then
+      RestoreAnchorState(state, wrapper)
+    end
   end
 
   ApplyWrapperOffset(plate, wrapper)

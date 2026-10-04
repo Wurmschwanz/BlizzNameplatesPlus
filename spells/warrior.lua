@@ -78,6 +78,9 @@ BNP.WarriorAuras = {
   {
     key = "charge_stun",
     names = { "Charge Stun" },
+    -- The harmful stun, not the Charge cast (100 / 6178 / 11578).
+    -- Match even before a localized aura name is available.
+    spellIDs = { 7922 },
     duration = 1,
   },
   {

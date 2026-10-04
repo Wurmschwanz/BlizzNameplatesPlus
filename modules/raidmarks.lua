@@ -47,6 +47,13 @@ function BNP:ApplyRaidMarkPosition(plate)
   local point, relativeTo, relativePoint, x, y = GetCustomAnchor(plate, position)
   if not point or not relativeTo then return end
 
+  -- Keep the native icon with the scaled plate visuals if the client restores
+  -- its parent. This preserves the same scaling and alpha as the healthbar.
+  local wrapper = plate.BNPScaleWrapper
+  if wrapper and icon.GetParent and icon.SetParent and icon:GetParent() ~= wrapper then
+    icon:SetParent(wrapper)
+  end
+
   if not PointMatches(icon, point, relativeTo, relativePoint, x, y) then
     if not icon.ClearAllPoints or not icon.SetPoint then return end
     icon:ClearAllPoints()
@@ -60,7 +67,9 @@ function BNP:MaintainRaidMarkPosition(plate)
   if not plate or not plate.IsShown or not plate:IsShown() then return end
   local icon = plate.raidicon
   if not icon then return end
-  -- This path runs from the per-frame plate guard. Most plates have no active
+  -- This path runs after native/offset updates on EVERY rendered frame. A
+  -- throttled repair leaves the native anchor visible between repairs.
+  -- Most plates have no active
   -- raid mark, so avoid GetPoint/anchor comparisons until Blizzard actually
   -- shows the icon. The first visible frame will still be corrected instantly.
   if icon.IsShown and not icon:IsShown() then return end

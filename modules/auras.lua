@@ -2340,7 +2340,7 @@ local function CaptureLiveDebuffSnapshot(unit, now)
       local auraName, texture, stacks, dtype, duration, expirationTime, source,
         isStealable, nameplateShowPersonal, auraSpellID =
           BNP._ClassicUnitAuraBySlot(unit, slots[i])
-      if auraName then
+      if auraName or (auraSpellID and auraSpellID > 0) then
         count = count + 1
         local entry = entries[count]
         if not entry then
@@ -2937,20 +2937,24 @@ function BNP:CacheTankControlSnapshot(plate, guid, snapshot)
     or not self:IsTankModeEnabled() then
     plate.BNPTankControlGUID = nil
     plate.BNPTankControlled = nil
+    plate.BNPTankChargeStun = nil
     return
   end
-  local controlled = false
+  local controlled, chargeStun = false, false
   local i
   for i = 1, snapshot.count do
     local entry = snapshot.entries[i]
     local def = ResolveGlobalCCDef(entry[4], entry[10])
     if def and self.TankDisablingCC and self.TankDisablingCC[def.key] then
       controlled = true
-      break
+      -- The applied Charge stun can arrive before the combat flag. It is
+      -- itself evidence of an opening attack; a cast attempt alone is not.
+      if def.key == "charge_stun" then chargeStun = true; break end
     end
   end
   plate.BNPTankControlGUID = guid
   plate.BNPTankControlled = controlled
+  plate.BNPTankChargeStun = chargeStun
 end
 
 -- One initial read when enabling the option on an already visible plate.

@@ -967,14 +967,16 @@ local function InstallAlphaGuard(plate)
     -- query inside ApplyForeignTagVisual is already cached to 10 Hz.
     ApplyForeignTagVisual(current)
 
+    -- Native projection can reset the raid icon anchor on any frame. Correct
+    -- visible marks before rendering; the Y-offset loop leaves their anchors
+    -- to raidmarks.lua. This only compares existing geometry, with no unit or
+    -- aura queries, and skips plates whose native raid icon is hidden.
+    if BNP.MaintainRaidMarkPosition then BNP:MaintainRaidMarkPosition(current) end
+
     current.BNPVisualGuardElapsed = (current.BNPVisualGuardElapsed or 0) + (arg1 or 0)
     if current.BNPVisualGuardElapsed >= 0.05 then
       current.BNPVisualGuardElapsed = 0
 
-      -- Blizzard and the scale/Y-offset wrapper may restore the native raid icon
-      -- anchor while the plate is being projected. Reapply the optional custom
-      -- Raid Mark position on the throttled safety pass.
-      if BNP.MaintainRaidMarkPosition then BNP:MaintainRaidMarkPosition(current) end
       if BNP.MaintainTargetScale then BNP:MaintainTargetScale(current) end
       ApplyTargetGlow(current)
       ApplyTargetArrows(current)
