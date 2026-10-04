@@ -872,7 +872,17 @@ function BNP:_ReadClassicDebuff(unit, index, filter)
 end
 
 function BNP:_IsOwnClassicAuraSource(source)
-  return source == "player" or source == "pet"
+  if source == "player" or source == "pet" then return true end
+  if not source or source == "" or not UnitExists then return false end
+  -- Some source paths supply a GUID/token alias rather than "player"/"pet".
+  local exists, guid = UnitExists("player")
+  if exists and guid and source == guid then return true end
+  exists, guid = UnitExists("pet")
+  if exists and guid and source == guid then return true end
+  if UnitIsUnit and UnitExists(source) then
+    return UnitIsUnit(source, "player") or UnitIsUnit(source, "pet") or false
+  end
+  return false
 end
 
 function BNP:_IsKnownForeignClassicAuraSource(source)
@@ -2898,12 +2908,14 @@ local function ResolveGlobalCCDef(spellID, auraName)
   -- texture fallback can turn harmless effects into ghost CC icons. ClassicAPI
   -- supplies either the aura spell ID or the exact aura name on supported paths.
   if spellID and GLOBAL_CC_BY_ID[spellID] then return GLOBAL_CC_BY_ID[spellID] end
-  if spellID and GLOBAL_CC_NEGATIVE[spellID] then return nil end
 
   if (not auraName or auraName == "") and spellID and SpellInfo then
     auraName = SpellInfo(spellID)
   end
 
+  -- An unnamed/incomplete read must not permanently blacklist this spell.
+  -- Cache misses only for the resolved name and retry when metadata improves.
+  if spellID and auraName and GLOBAL_CC_NEGATIVE[spellID] == auraName then return nil end
   local _, ccDef
   if auraName and auraName ~= "" then
     for _, ccDef in ipairs(GLOBAL_CC_DEFS) do
@@ -2914,7 +2926,7 @@ local function ResolveGlobalCCDef(spellID, auraName)
     end
   end
 
-  if spellID then GLOBAL_CC_NEGATIVE[spellID] = true end
+  if spellID and auraName and auraName ~= "" then GLOBAL_CC_NEGATIVE[spellID] = auraName end
   return nil
 end
 
@@ -2959,7 +2971,7 @@ end
 -- gives us a caster we can positively identify as player-controlled.  Treating
 -- missing/unresolved source metadata as "probably a player" can turn unrelated
 -- NPC auras into ghost CC icons (for example a Paladin-looking seal icon with no
--- Paladin present).  Own player/pet CCs are handled by the normal own-aura path.
+-- Paladin present). Own player/pet CCs are admitted separately below.
 function BNP:_IsAllowedForeignCCSource(source)
   if not source or source == "" then return false end
   if self:_IsOwnClassicAuraSource(source) then return false end
@@ -2969,12 +2981,47 @@ function BNP:_IsAllowedForeignCCSource(source)
   return UnitPlayerControlled(source) and true or false
 end
 
+-- Actual live CCs can be triggered by a pet or proc without a matching
+-- player CAST. Reuse the same CC scan/snapshot, including for own effects.
+function BNP:WantsLiveCCs()
+  return self.AreCrowdControlEnabled and self:AreCrowdControlEnabled()
+end
+
+function BNP:_AppendLiveCCs(guid, active, pool, count, now)
+  if not self:WantsLiveCCs() then return count end
+  local live = guid and self.guidLiveCCs[guid]
+  if not live then return count end
+  local foreignEnabled = WantsForeignCCs()
+  local key, aura
+  for key, aura in pairs(live) do
+    if count >= MAX_VISIBLE_ICONS then break end
+    local fresh = aura.eventDriven or now - (aura.lastSeen or 0) <= 0.60
+    if aura.def and fresh and (aura.isOwn or foreignEnabled) then
+      local duplicate = false
+      local i
+      for i = 1, count do
+        if active[i].def and active[i].def.key == key then duplicate = true; break end
+      end
+      if not duplicate then
+        count = count + 1
+        local entry = pool[count]
+        active[count] = entry
+        entry.def = aura.def
+        entry.aura = aura
+        entry.remaining = aura.expires and (aura.expires - now) or nil
+        entry.svRenderRevision = nil
+      end
+    end
+  end
+  return count
+end
+
 local FOREIGN_CC_SEEN = {}
 local foreignCCSeenGeneration = 0
 
 local function SyncForeignCCs(unit, guid, now, snapshot, eventAuthoritative)
   if not unit or not guid then return end
-  if not WantsForeignCCs() then
+  if not BNP:WantsLiveCCs() then
     BNP.guidLiveCCs[guid] = nil
     return
   end
@@ -2989,8 +3036,8 @@ local function SyncForeignCCs(unit, guid, now, snapshot, eventAuthoritative)
     if snapshot then
       local entry = snapshot.entries[i]
       if not entry then break end
-      texture, stacks, dtype, auraSpellID, source, auraName =
-        entry[1], entry[2], entry[3], entry[4], entry[7], entry[10]
+      texture, stacks, dtype, auraSpellID, liveDuration, liveExpires, source, auraName =
+        entry[1], entry[2], entry[3], entry[4], entry[5], entry[6], entry[7], entry[10]
     else
       local isStealable, nameplateShowPersonal
       texture, stacks, dtype, auraSpellID, liveDuration, liveExpires, source,
@@ -2998,9 +3045,15 @@ local function SyncForeignCCs(unit, guid, now, snapshot, eventAuthoritative)
       if not texture then break end
     end
 
-    local ccDef = nil
-    if BNP:_IsAllowedForeignCCSource(source) then
-      ccDef = ResolveGlobalCCDef(auraSpellID, auraName)
+    -- Most harmful auras are not CCs. Resolve identity first, so source/GUID
+    -- checks are only needed for the few effects that can actually be shown.
+    local ccDef = ResolveGlobalCCDef(auraSpellID, auraName)
+    local ownSource = false
+    if ccDef then
+      ownSource = BNP:_IsOwnClassicAuraSource(source)
+      if not ownSource and not (WantsForeignCCs() and BNP:_IsAllowedForeignCCSource(source)) then
+        ccDef = nil
+      end
     end
     if ccDef then
       FOREIGN_CC_SEEN[ccDef.key] = seenGeneration
@@ -3015,6 +3068,7 @@ local function SyncForeignCCs(unit, guid, now, snapshot, eventAuthoritative)
         live[ccDef.key] = aura
       end
       aura.def = ccDef
+      aura.isOwn = ownSource and true or false
       aura.spellID = auraSpellID
       aura.texture = texture or ccDef.texture
       aura.stacks = tonumber(stacks) or 0
@@ -3028,8 +3082,13 @@ local function SyncForeignCCs(unit, guid, now, snapshot, eventAuthoritative)
       -- Vanilla/SuperWoW does not reliably provide foreign application time.
       -- Use a conservative local estimate for text only; live aura presence is
       -- authoritative for appearance/removal.
-      if not aura.expires and ccDef.duration then
-        aura.expires = now + ccDef.duration
+      liveExpires = tonumber(liveExpires)
+      liveDuration = tonumber(liveDuration)
+      aura.duration = (liveDuration and liveDuration > 0 and liveDuration) or ccDef.duration
+      if liveExpires and liveExpires > now then
+        aura.expires = liveExpires
+      elseif not aura.expires and aura.duration then
+        aura.expires = now + aura.duration
       end
     end
   end
@@ -3131,30 +3190,8 @@ local function UpdateCCRow(plate, guid, cache, now)
     end
   end
 
-  -- Other Debuffs intentionally excludes Crowd Control. Foreign CCs are
-  -- handled only by BNP's dedicated CC tracker below.
-
-  if WantsForeignCCs() then
-    local live = guid and BNP.guidLiveCCs[guid]
-    local key, aura
-    for key, aura in pairs(live or {}) do
-      if count >= MAX_VISIBLE_ICONS then break end
-      -- Legacy polled CCs need a freshness timeout because a projected token can
-      -- go stale. Event-driven CCs are different: after a positive UNIT_AURA
-      -- snapshot there is intentionally no periodic poll, so lastSeen naturally
-      -- becomes older than 0.60s while the CC is still active. Keep those entries
-      -- until SyncForeignCCs receives an authoritative removal event.
-      local liveFresh = aura.eventDriven or (now - (aura.lastSeen or 0) <= 0.60)
-      if aura.def and seenOwn[key] ~= seenOwnGeneration and liveFresh then
-        count = count + 1
-        local entry = pool[count]
-        active[count] = entry
-        entry.def = aura.def
-        entry.aura = aura
-        entry.remaining = aura.expires and (aura.expires - now) or nil
-      end
-    end
-  end
+  -- Reuse the live list for own triggered/pet CCs and enabled foreign CCs.
+  count = BNP:_AppendLiveCCs(guid, active, pool, count, now)
 
   table.sort(active, BNP._AuraEntryOrderLess)
 
@@ -3650,6 +3687,12 @@ local function UpdatePlate(plate, now)
     end
   end
 
+  -- Shared-row layouts must include the same live CCs as the separate row.
+  -- Previously other-player CCs disappeared entirely in a shared row.
+  if not UseDedicatedCCContainer() then
+    activeCount = BNP:_AppendLiveCCs(guid, active, activePool, activeCount, now)
+  end
+
   -- Selected non-CC live debuffs from other players/classes are appended
   -- after the local player's own entries. Crowd Control is handled exclusively
   -- by BNP's dedicated CC tracker and never enters this list.
@@ -3854,7 +3897,7 @@ function BNP:_HandleClassicUnitAura(token, plate)
   if BNP.guidAuras[guid] then
     SyncAuraRemoval(token, guid, now, snapshot, GetTargetGUID(), true)
   end
-  if WantsForeignCCs() then
+  if self:WantsLiveCCs() then
     SyncForeignCCs(token, guid, now, snapshot, true)
   elseif BNP.guidLiveCCs then
     BNP.guidLiveCCs[guid] = nil
@@ -4132,7 +4175,7 @@ end
 
 local foreignCCScanner = CreateFrame("Frame")
 foreignCCScanner:SetScript("OnUpdate", function()
-  if not WantsForeignCCs() then return end
+  if not BNP:WantsLiveCCs() then return end
   foreignCCElapsed = foreignCCElapsed + arg1
   foreignCCTargetElapsed = foreignCCTargetElapsed + arg1
   if foreignCCElapsed < FOREIGN_CC_BUCKET_INTERVAL then return end

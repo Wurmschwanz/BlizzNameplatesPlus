@@ -82,7 +82,9 @@ BNP.HunterAuras = {
   },
   {
     key = "intimidation",
-    names = { "Intimidation" },
+    names = { "Intimidation", "Einschuechterung", "Einschüchterung" },
+    -- Actual harmful stun. 19577 is the command/buff on the pet, not the CC.
+    spellIDs = { 24394 },
     duration = 3,
   },
   {
