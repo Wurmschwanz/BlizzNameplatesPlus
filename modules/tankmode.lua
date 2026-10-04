@@ -55,7 +55,7 @@ local function HasCachedControl(plate, guid, now)
   return false
 end
 
-local function IsTemporarilyInactive(plate, guid, now, noTarget)
+local function IsTemporarilyInactive(plate, guid, now)
   -- One optional descriptor read covers combat, stun, confusion and fleeing,
   -- including low-health fleeing with a retained target. No tooltip/aura scan.
   local flags
@@ -70,7 +70,9 @@ local function IsTemporarilyInactive(plate, guid, now, noTarget)
   if flags and (HasFlag(flags, 262144) or HasFlag(flags, 4194304) or HasFlag(flags, 8388608)) then
     return true
   end
-  return HasCachedControl(plate, guid, now) or noTarget
+  -- A missing target alone is not evidence of CC or fleeing. It also occurs
+  -- during death, pet return and ordinary target switches.
+  return HasCachedControl(plate, guid, now)
 end
 
 local playerGUID = nil
@@ -99,12 +101,21 @@ end
 local function GetTargetGUID(guid)
   if not guid then return nil end
   local exists, targetGUID = UnitExists(guid .. "target")
-  if exists then return targetGUID, false end
-  return nil, true
+  if exists then return targetGUID end
+  return nil
 end
 
 local function GetBar(plate)
   return plate and (plate.healthbar or plate.healthBar) or nil
+end
+
+local function HasZeroHealth(bar)
+  -- Read the existing bar only; no extra unit/aura query on the frame loop.
+  -- Ignore uninitialized bars and positive minima (which may represent 1 HP).
+  if not bar or not bar.GetValue or not bar.GetMinMaxValues then return false end
+  if bar:GetValue() ~= 0 then return false end
+  local minimum, maximum = bar:GetMinMaxValues()
+  return minimum == 0 and maximum and maximum > 0
 end
 
 local function IsHostileNPC(guid)
@@ -179,6 +190,10 @@ local function EnforceTankColor(plate)
   end
   local bar = GetBar(plate)
   if not bar or not plate.BNPTankR then return end
+  if plate.BNPTankNoTargetActive and HasZeroHealth(bar) then
+    RestoreNormalColor(plate, bar)
+    return
+  end
 
   local r, g, b = bar:GetStatusBarColor()
   if math.abs(r - plate.BNPTankR) > 0.01
@@ -220,7 +235,7 @@ function BNP:UpdateTankModePlate(plate)
   if thirdColor then
     if plate.BNPTankUnitGUID ~= guid then ClearTankState(plate) end
     plate.BNPTankUnitGUID = guid
-    if UnitIsDead and UnitIsDead(guid) then
+    if HasZeroHealth(bar) or (UnitIsDead and UnitIsDead(guid)) then
       RestoreNormalColor(plate, bar)
       return
     end
@@ -231,9 +246,9 @@ function BNP:UpdateTankModePlate(plate)
   local myGUID = GetPlayerGUID()
   if not myGUID then return end
 
-  local targetGUID, noTarget = GetTargetGUID(guid)
+  local targetGUID = GetTargetGUID(guid)
   local now = thirdColor and GetTime()
-  if thirdColor and IsTemporarilyInactive(plate, guid, now, noTarget) then
+  if thirdColor and IsTemporarilyInactive(plate, guid, now) then
     local r, g, b = self:GetTankNoTargetColor()
     ApplyTankColor(plate, bar, r, g, b)
     plate.BNPTankNoTargetActive = true
