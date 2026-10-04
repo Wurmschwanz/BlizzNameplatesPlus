@@ -817,6 +817,17 @@ local function UpdatePlate(plate)
   local guid = BNP.GetStablePlateAuraGUID and BNP.GetStablePlateAuraGUID(plate, now) or GetPlateGUID(plate)
   if not guid then HideContainer(plate) return end
 
+  local cache = BNP.guidImmunities and BNP.guidImmunities[guid]
+
+  -- PvE fast path: once a stable GUID has been positively resolved as an
+  -- existing non-player unit, do not repeat ClassicAPI/UnitBuff player checks
+  -- every 0.10s for that same NPC. A recycled plate gets a different GUID and
+  -- automatically falls back to normal detection. Cast-event cache always wins.
+  if plate.BNPImmunityNonPlayerGUID == guid and not cache then
+    HideContainer(plate)
+    return
+  end
+
   local targetGUID = GetTargetGUID()
   local unit = nil
   if targetGUID and targetGUID == guid then
@@ -840,12 +851,20 @@ local function UpdatePlate(plate)
 
   -- Lazy creation: NPC nameplates with no immunity state never need a
   -- container or its four icon frames. Existing cast-event state still gets
-  -- rendered even during a short token-resolution gap.
-  local cache = BNP.guidImmunities and BNP.guidImmunities[guid]
+  -- rendered even during a short token-resolution gap. Cache a negative player
+  -- result only when UnitExists positively confirms that the projected unit is
+  -- valid; transient/unresolved tokens therefore never get stuck as NPCs.
   if not classicCanScan and not legacyCanScan and not cache then
+    local unitExists = false
+    if unit and UnitExists then
+      local ok, exists = pcall(UnitExists, unit)
+      unitExists = ok and exists and true or false
+    end
+    if unitExists then plate.BNPImmunityNonPlayerGUID = guid end
     HideContainer(plate)
     return
   end
+  plate.BNPImmunityNonPlayerGUID = nil
 
   if not plate.BNPImmunityContainer then CreateContainer(plate) end
   if classicCanScan then ScanClassicAPIBuffs(classicUnit, guid, now) end

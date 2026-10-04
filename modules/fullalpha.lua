@@ -865,6 +865,13 @@ local function ApplyTargetArrows(plate)
 end
 
 
+local function SetDetachedObjectAlpha(object, wantedAlpha)
+  if object and object.SetAlpha and
+     (not object.GetAlpha or object:GetAlpha() ~= wantedAlpha) then
+    object:SetAlpha(wantedAlpha)
+  end
+end
+
 local function ApplyTargetOnlyPresentation(plate, alpha, targetOnly)
   if not plate then return end
 
@@ -872,15 +879,9 @@ local function ApplyTargetOnlyPresentation(plate, alpha, targetOnly)
   -- projected plate alpha. Keep them in lockstep with Target Only and restore
   -- them to full opacity immediately when the option is disabled.
   local detachedAlpha = targetOnly and alpha or 1
-  local function SetObjectAlpha(object)
-    if object and object.SetAlpha and
-       (not object.GetAlpha or object:GetAlpha() ~= detachedAlpha) then
-      object:SetAlpha(detachedAlpha)
-    end
-  end
-  SetObjectAlpha(plate.BNPAuraContainer)
-  SetObjectAlpha(plate.BNPCCContainer)
-  SetObjectAlpha(plate.BNPImmunityContainer)
+  SetDetachedObjectAlpha(plate.BNPAuraContainer, detachedAlpha)
+  SetDetachedObjectAlpha(plate.BNPCCContainer, detachedAlpha)
+  SetDetachedObjectAlpha(plate.BNPImmunityContainer, detachedAlpha)
 
   -- BNP routes nameplate clicks through BNPScaleWrapper. Alpha-0 frames can
   -- still receive mouse input in the WoW UI, so disable the wrapper hit area
@@ -888,7 +889,10 @@ local function ApplyTargetOnlyPresentation(plate, alpha, targetOnly)
   local wrapper = plate.BNPScaleWrapper
   if wrapper and wrapper.EnableMouse then
     local shouldEnableMouse = (not targetOnly) or alpha > 0
-    wrapper:EnableMouse(shouldEnableMouse)
+    if wrapper.BNPTargetOnlyMouseEnabled ~= shouldEnableMouse then
+      wrapper:EnableMouse(shouldEnableMouse)
+      wrapper.BNPTargetOnlyMouseEnabled = shouldEnableMouse
+    end
 
     if not shouldEnableMouse and BNP.BNPMouseoverOwner == wrapper then
       BNP.BNPMouseoverOwner = nil
@@ -950,19 +954,33 @@ local function InstallAlphaGuard(plate)
       BNP:MaintainNameplateYOffset(current)
     end
 
-    -- Blizzard and the scale/Y-offset wrapper may restore the native raid icon
-    -- anchor while the plate is being projected. Reapply the optional custom
-    -- Raid Mark position afterwards so it stays stable without touching its
-    -- texture, visibility or size.
-    if BNP.MaintainRaidMarkPosition then BNP:MaintainRaidMarkPosition(current) end
-
+    -- Alpha / Target Only remains per-frame because projected Vanilla plates
+    -- can be recycled between normal events and Blizzard may rewrite alpha.
+    -- The heavier visual guards below do not need render-rate polling: target
+    -- changes refresh the old/new target immediately through PLAYER_TARGET_CHANGED,
+    -- while a 20 Hz safety pass is more than enough to repair occasional client
+    -- rewrites without doing the same work 60-165 times per second per plate.
     ApplyTargetAlpha(current)
-    if BNP.MaintainTargetScale then BNP:MaintainTargetScale(current) end
-    ApplyTargetGlow(current)
-    ApplyTargetArrows(current)
-    ApplyTargetBorderColor(current)
+    -- Foreign-tag grey is deliberately still enforced every frame. Blizzard can
+    -- rewrite healthbar colors between events and even a short throttle can
+    -- reintroduce a visible grey/red flash on tagged mobs. The expensive owner
+    -- query inside ApplyForeignTagVisual is already cached to 10 Hz.
     ApplyForeignTagVisual(current)
-    ApplyTargetFrameLevel(current)
+
+    current.BNPVisualGuardElapsed = (current.BNPVisualGuardElapsed or 0) + (arg1 or 0)
+    if current.BNPVisualGuardElapsed >= 0.05 then
+      current.BNPVisualGuardElapsed = 0
+
+      -- Blizzard and the scale/Y-offset wrapper may restore the native raid icon
+      -- anchor while the plate is being projected. Reapply the optional custom
+      -- Raid Mark position on the throttled safety pass.
+      if BNP.MaintainRaidMarkPosition then BNP:MaintainRaidMarkPosition(current) end
+      if BNP.MaintainTargetScale then BNP:MaintainTargetScale(current) end
+      ApplyTargetGlow(current)
+      ApplyTargetArrows(current)
+      ApplyTargetBorderColor(current)
+      ApplyTargetFrameLevel(current)
+    end
   end)
 
   plate.BNPFullAlphaGuard = true

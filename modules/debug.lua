@@ -4,6 +4,16 @@ local function CreateMarker(plate)
   if not plate then return end
   BNP:RegisterPlate(plate)
 
+  -- Debug is disabled for normal gameplay. Do not allocate an extra Frame,
+  -- Texture and FontString on every nameplate unless the user actually enables
+  -- the marker. Existing markers are simply hidden when debug is off.
+  if not BNP.debugEnabled then
+    if plate.BNPMarker and plate.BNPMarker.IsShown and plate.BNPMarker:IsShown() then
+      plate.BNPMarker:Hide()
+    end
+    return
+  end
+
   if not plate.BNPMarker then
     local marker = CreateFrame("Frame", nil, plate)
     marker:SetWidth(14)
@@ -23,7 +33,7 @@ local function CreateMarker(plate)
     plate.BNPMarker = marker
   end
 
-  if BNP.debugEnabled then plate.BNPMarker:Show() else plate.BNPMarker:Hide() end
+  plate.BNPMarker:Show()
 end
 
 table.insert(BNP.libnameplate.OnInit, CreateMarker)
@@ -35,8 +45,10 @@ function BNP:SetDebug(enabled)
   BNP_DB.debugEnabled = enabled
   local plate
   for plate in pairs(BNP.plates) do
-    if plate.BNPMarker then
-      if enabled then plate.BNPMarker:Show() else plate.BNPMarker:Hide() end
+    if enabled then
+      CreateMarker(plate)
+    elseif plate.BNPMarker then
+      plate.BNPMarker:Hide()
     end
   end
   BNP:Print("Debug-Marker " .. (enabled and "aktiviert" or "deaktiviert") .. ".")

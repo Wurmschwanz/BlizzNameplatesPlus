@@ -18,6 +18,8 @@ BNP.defaults = BNP.defaults or {
   debuffPosition = "top",
   ccPosition = "top",
   tankMode = false,
+  tankNoTarget = false,
+  tankNoTargetColor = { r = 0.00, g = 0.45, b = 1.00 },
   invertTankColors = false,
   invertTankAggroColor = { r = 1.00, g = 0.00, b = 0.00 },
   invertTankNoAggroColor = { r = 0.00, g = 1.00, b = 0.00 },
@@ -124,6 +126,7 @@ function BNP:InitConfig()
   if BNP_DB.ccYOffset == nil then BNP_DB.ccYOffset = self.defaults.ccYOffset end
   if BNP_DB.debuffPosition == nil then BNP_DB.debuffPosition = self.defaults.debuffPosition end
   if BNP_DB.ccPosition == nil then BNP_DB.ccPosition = BNP_DB.debuffPosition or self.defaults.ccPosition end
+  if BNP_DB.tankNoTarget == nil then BNP_DB.tankNoTarget = self.defaults.tankNoTarget end
   if BNP_DB.tankMode == nil then BNP_DB.tankMode = self.defaults.tankMode end
   if BNP_DB.invertTankColors == nil then BNP_DB.invertTankColors = self.defaults.invertTankColors end
 
@@ -137,6 +140,7 @@ function BNP:InitConfig()
     if color.g == nil then color.g = fallback.g end
     if color.b == nil then color.b = fallback.b end
   end
+  InitTankColor("tankNoTargetColor", self.defaults.tankNoTargetColor)
   InitTankColor("invertTankAggroColor", self.defaults.invertTankAggroColor)
   InitTankColor("invertTankNoAggroColor", self.defaults.invertTankNoAggroColor)
 
@@ -388,6 +392,28 @@ local function ClampTankColor(value, fallback)
   if value < 0 then value = 0 end
   if value > 1 then value = 1 end
   return value
+end
+
+function BNP:IsTankNoTargetEnabled()
+  return BNP_DB and BNP_DB.tankNoTarget and true or false
+end
+
+function BNP:GetTankNoTargetColor()
+  local fallback = self.defaults.tankNoTargetColor
+  local color = BNP_DB and BNP_DB.tankNoTargetColor or fallback
+  return ClampTankColor(color and color.r, fallback.r),
+         ClampTankColor(color and color.g, fallback.g),
+         ClampTankColor(color and color.b, fallback.b)
+end
+
+function BNP:SetTankNoTargetColor(r, g, b)
+  if not BNP_DB then return end
+  BNP_DB.tankNoTargetColor = {
+    r = ClampTankColor(r, 0),
+    g = ClampTankColor(g, 0.45),
+    b = ClampTankColor(b, 1),
+  }
+  if self.UpdateTankMode then self:UpdateTankMode() end
 end
 
 function BNP:GetInvertTankAggroColor()

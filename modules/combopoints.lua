@@ -441,9 +441,11 @@ table.insert(BNP.libnameplate.OnShow, function(plate)
   end
 end)
 
-table.insert(BNP.libnameplate.OnUpdate, function(plate)
-  if COMBO_CLASS then UpdatePlate(plate) end
-end)
+if COMBO_CLASS then
+  table.insert(BNP.libnameplate.OnUpdate, function(plate)
+    UpdatePlate(plate)
+  end)
+end
 
 if COMBO_CLASS then
   local events = CreateFrame("Frame")

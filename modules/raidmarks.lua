@@ -58,6 +58,12 @@ end
 
 function BNP:MaintainRaidMarkPosition(plate)
   if not plate or not plate.IsShown or not plate:IsShown() then return end
+  local icon = plate.raidicon
+  if not icon then return end
+  -- This path runs from the per-frame plate guard. Most plates have no active
+  -- raid mark, so avoid GetPoint/anchor comparisons until Blizzard actually
+  -- shows the icon. The first visible frame will still be corrected instantly.
+  if icon.IsShown and not icon:IsShown() then return end
   self:ApplyRaidMarkPosition(plate)
 end
 

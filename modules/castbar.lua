@@ -539,6 +539,18 @@ discovery:SetScript("OnUpdate", function()
     return
   end
 
+  -- No active timed cast and no short success/fail feedback means there is
+  -- nothing to discover. UNIT_CASTEVENT wakes this path automatically by
+  -- creating an entry in casts/castFeedback, so idle gameplay no longer walks
+  -- every visible nameplate 20 times per second.
+  if not castbarTestMode and not next(casts) and not next(castFeedback) then
+    local plate
+    for plate in pairs(activeCastPlates) do
+      MarkCastPlateInactive(plate)
+    end
+    return
+  end
+
   local now = GetTime()
 
   -- Drop expired feedback even if its nameplate disappeared before the short

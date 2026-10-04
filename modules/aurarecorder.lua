@@ -860,9 +860,11 @@ function BNP:StartAuraRecorder()
     recorder.active = false
     UnregisterRecorderEvents()
     updateFrame:SetScript("OnUpdate", nil)
+    if self.SetUnknownDiagnosticsActive then self:SetUnknownDiagnosticsActive(false) end
   end
 
   UnregisterRecorderEvents()
+  if self.ResetUnknownBeta then self:ResetUnknownBeta(true) end
   recorder.lines = {}
   recorder.charCount = 0
   recorder.limitHit = false
@@ -879,6 +881,7 @@ function BNP:StartAuraRecorder()
   recorder.traceGUID = nil
   recorder.traceName = nil
   recorder.active = true
+  if self.SetUnknownDiagnosticsActive then self:SetUnknownDiagnosticsActive(true) end
 
   local registeredCount = 0
   local i
@@ -959,6 +962,7 @@ function BNP:StopAuraRecorder(reason)
   recorder.stoppedAt = GetTime()
   UnregisterRecorderEvents()
   updateFrame:SetScript("OnUpdate", nil)
+  if self.SetUnknownDiagnosticsActive then self:SetUnknownDiagnosticsActive(false) end
   DumpInternalDiagnostics()
   AppendLine("=== END REPORT | reason=" .. CleanValue(reason or "user") .. " | elapsed=" ..
     string.format("%.3f", recorder.stoppedAt - (recorder.startedAt or recorder.stoppedAt)) .. "s ===", true)

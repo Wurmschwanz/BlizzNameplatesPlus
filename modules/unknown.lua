@@ -247,12 +247,9 @@ local combatEvents={
   "CHAT_MSG_SPELL_PERIODIC_CREATURE_DAMAGE",
   "CHAT_MSG_SPELL_PERIODIC_HOSTILEPLAYER_DAMAGE",
 }
-local cei
-for cei=1,table.getn(combatEvents) do combatFrame:RegisterEvent(combatEvents[cei]) end
 combatFrame:SetScript("OnEvent",function() AddCombatEffect(arg1) end)
 
 local castFrame = CreateFrame("Frame")
-castFrame:RegisterEvent("UNIT_CASTEVENT")
 castFrame:SetScript("OnEvent", function()
   local playerGUID = GetPlayerGUID()
   if not playerGUID or arg1 ~= playerGUID then return end
@@ -265,7 +262,7 @@ end)
 
 local scanner = CreateFrame("Frame")
 local elapsed = 0
-scanner:SetScript("OnUpdate", function()
+local function UnknownScannerOnUpdate()
   elapsed = elapsed + arg1
   if elapsed < 0.35 then return end
   elapsed = 0
@@ -292,7 +289,7 @@ scanner:SetScript("OnUpdate", function()
       end
     end
   end
-end)
+end
 
 function BNP:PrintUnknownBeta(verbose)
   local data = self.unknownBeta
@@ -362,14 +359,17 @@ function BNP:PrintUnknownBeta(verbose)
   end
 end
 
-function BNP:ResetUnknownBeta()
+function BNP:ResetUnknownBeta(silent)
   self.unknownBeta.entries = {}
   self.unknownBeta.order = {}
   self.unknownBeta.recentCasts = {}
   self.unknownBeta.seenByGUID = {}
   self.unknownBeta.combat = {}
   self.unknownBeta.activeUntil = 0
-  self:Print("Unknown spell/effect list cleared.")
+  self.unknownDirectEvents = {}
+  if not silent then
+    self:Print("Unknown spell/effect list cleared.")
+  end
 end
 
 
@@ -449,7 +449,6 @@ local function RememberDirectEvent(eventType, spellID, targetGUID, extra)
 end
 
 local directFrame = CreateFrame("Frame")
-directFrame:RegisterEvent("UNIT_CASTEVENT")
 directFrame:SetScript("OnEvent", function()
   local casterGUID = arg1
   local targetGUID = arg2
@@ -464,6 +463,36 @@ directFrame:SetScript("OnEvent", function()
     RememberDirectEvent(eventType, spellID, targetGUID, arg5)
   end
 end)
+
+-- Keep the legacy unknown-spell collector completely dormant during normal
+-- gameplay. It is diagnostic-only and can otherwise turn into a permanent
+-- 0.35s aura scan while the player is continuously casting in combat. The
+-- Missing Spell / Aura Recorder enables it only for the duration of an active
+-- recording, where the extra diagnostics are actually useful.
+local unknownDiagnosticsActive = false
+function BNP:SetUnknownDiagnosticsActive(enabled)
+  enabled = enabled and true or false
+  if unknownDiagnosticsActive == enabled then return end
+  unknownDiagnosticsActive = enabled
+
+  if enabled then
+    local i
+    for i = 1, table.getn(combatEvents) do
+      combatFrame:RegisterEvent(combatEvents[i])
+    end
+    castFrame:RegisterEvent("UNIT_CASTEVENT")
+    directFrame:RegisterEvent("UNIT_CASTEVENT")
+    elapsed = 0
+    scanner:SetScript("OnUpdate", UnknownScannerOnUpdate)
+  else
+    combatFrame:UnregisterAllEvents()
+    castFrame:UnregisterAllEvents()
+    directFrame:UnregisterAllEvents()
+    scanner:SetScript("OnUpdate", nil)
+    elapsed = 0
+    BNP.unknownBeta.activeUntil = 0
+  end
+end
 
 function BNP:PrintUnknownDirectEvents()
   local list = {}

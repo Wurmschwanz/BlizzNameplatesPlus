@@ -2892,36 +2892,23 @@ local function BuildGlobalCCDefs()
 end
 BuildGlobalCCDefs()
 
-local function ResolveGlobalCCDef(spellID, texture)
-  -- Prefer reliable aura identity over icon matching. Several unrelated auras
-  -- reuse the same Blizzard icon (for example Resurrection Sickness and
-  -- Howl of Terror), so texture matching must never override a known spell.
+local function ResolveGlobalCCDef(spellID, auraName)
+  -- Foreign CCs must be identified by exact spell identity, never by icon.
+  -- Blizzard reuses many spell textures across unrelated buffs/debuffs, so a
+  -- texture fallback can turn harmless effects into ghost CC icons. ClassicAPI
+  -- supplies either the aura spell ID or the exact aura name on supported paths.
   if spellID and GLOBAL_CC_BY_ID[spellID] then return GLOBAL_CC_BY_ID[spellID] end
   if spellID and GLOBAL_CC_NEGATIVE[spellID] then return nil end
 
-  local auraName = spellID and SpellInfo and SpellInfo(spellID) or nil
-  local _, ccDef
+  if (not auraName or auraName == "") and spellID and SpellInfo then
+    auraName = SpellInfo(spellID)
+  end
 
-  -- A known spell name is authoritative. If it is not one of our CCs, cache
-  -- the negative result and do not reinterpret it from a shared icon texture.
+  local _, ccDef
   if auraName and auraName ~= "" then
     for _, ccDef in ipairs(GLOBAL_CC_DEFS) do
       if NameMatches(ccDef, auraName) then
         if spellID then GLOBAL_CC_BY_ID[spellID] = ccDef end
-        return ccDef
-      end
-    end
-
-    if spellID then GLOBAL_CC_NEGATIVE[spellID] = true end
-    return nil
-  end
-
-  -- Texture is only a compatibility fallback for aura scans where ClassicAPI
-  -- cannot provide a usable spell ID/name.
-  if texture then
-    local lowerTexture = string.lower(texture)
-    for _, ccDef in ipairs(GLOBAL_CC_DEFS) do
-      if ccDef.textureMatch and string.find(lowerTexture, ccDef.textureMatch) then
         return ccDef
       end
     end
@@ -2931,9 +2918,55 @@ local function ResolveGlobalCCDef(spellID, texture)
   return nil
 end
 
+-- Reuse the already-read UNIT_AURA snapshot for Tank Mode. This does not
+-- depend on aura display settings and never triggers an additional API scan.
+function BNP:CacheTankControlSnapshot(plate, guid, snapshot)
+  if not self.IsTankNoTargetEnabled or not self:IsTankNoTargetEnabled()
+    or not self:IsTankModeEnabled() then
+    plate.BNPTankControlGUID = nil
+    plate.BNPTankControlled = nil
+    return
+  end
+  local controlled = false
+  local i
+  for i = 1, snapshot.count do
+    local entry = snapshot.entries[i]
+    local def = ResolveGlobalCCDef(entry[4], entry[10])
+    if def and self.TankDisablingCC and self.TankDisablingCC[def.key] then
+      controlled = true
+      break
+    end
+  end
+  plate.BNPTankControlGUID = guid
+  plate.BNPTankControlled = controlled
+end
+
+-- One initial read when enabling the option on an already visible plate.
+-- Subsequent updates come from the existing UNIT_AURA watcher only.
+function BNP:PrimeTankControlSnapshot(plate, guid, now)
+  local token = plate.BNPClassicUnitToken
+  if not token or not self._ClassicGetNamePlateForUnit or not self._ClassicUnitGUID then return end
+  if self._ClassicGetNamePlateForUnit(token) ~= plate or self._ClassicUnitGUID(token) ~= guid then return end
+  self:CacheTankControlSnapshot(plate, guid, CaptureLiveDebuffSnapshot(token, now))
+end
+
 local function WantsForeignCCs()
   return BNP.AreCrowdControlEnabled and BNP:AreCrowdControlEnabled()
     and BNP.ShowOtherPlayersCCs and BNP:ShowOtherPlayersCCs()
+end
+
+-- "Show CCs from Other Players" must only show a foreign CC when ClassicAPI
+-- gives us a caster we can positively identify as player-controlled.  Treating
+-- missing/unresolved source metadata as "probably a player" can turn unrelated
+-- NPC auras into ghost CC icons (for example a Paladin-looking seal icon with no
+-- Paladin present).  Own player/pet CCs are handled by the normal own-aura path.
+function BNP:_IsAllowedForeignCCSource(source)
+  if not source or source == "" then return false end
+  if self:_IsOwnClassicAuraSource(source) then return false end
+
+  if not UnitExists or not UnitExists(source) then return false end
+  if not UnitPlayerControlled then return false end
+  return UnitPlayerControlled(source) and true or false
 end
 
 local FOREIGN_CC_SEEN = {}
@@ -2952,17 +2985,23 @@ local function SyncForeignCCs(unit, guid, now, snapshot, eventAuthoritative)
   local i
   local maxIndex = snapshot and snapshot.count or 64
   for i = 1, maxIndex do
-    local texture, stacks, dtype, auraSpellID
+    local texture, stacks, dtype, auraSpellID, liveDuration, liveExpires, source, auraName
     if snapshot then
       local entry = snapshot.entries[i]
       if not entry then break end
-      texture, stacks, dtype, auraSpellID = entry[1], entry[2], entry[3], entry[4]
+      texture, stacks, dtype, auraSpellID, source, auraName =
+        entry[1], entry[2], entry[3], entry[4], entry[7], entry[10]
     else
-      texture, stacks, dtype, auraSpellID = BNP:_ReadClassicDebuff(unit, i)
+      local isStealable, nameplateShowPersonal
+      texture, stacks, dtype, auraSpellID, liveDuration, liveExpires, source,
+        isStealable, nameplateShowPersonal, auraName = BNP:_ReadClassicDebuff(unit, i)
       if not texture then break end
     end
 
-    local ccDef = ResolveGlobalCCDef(auraSpellID, texture)
+    local ccDef = nil
+    if BNP:_IsAllowedForeignCCSource(source) then
+      ccDef = ResolveGlobalCCDef(auraSpellID, auraName)
+    end
     if ccDef then
       FOREIGN_CC_SEEN[ccDef.key] = seenGeneration
       if not live then
@@ -3798,6 +3837,7 @@ function BNP:_HandleClassicUnitAura(token, plate)
   end
 
   local snapshot = CaptureLiveDebuffSnapshot(token, now)
+  self:CacheTankControlSnapshot(plate, guid, snapshot)
 
   -- Pending own casts and AoE applications consume the same snapshot instead
   -- of re-walking the aura descriptor list.
@@ -3822,6 +3862,12 @@ function BNP:_HandleClassicUnitAura(token, plate)
 
   plate.BNPClassicAuraLastEvent = now
   UpdatePlate(plate, now)
+  -- Reflect confirmed CC appearance/removal in this event, without waiting
+  -- for the 0.10s nameplate poller. The snapshot above is already cached.
+  if self.UpdateTankModePlate and self.IsTankModeEnabled and self:IsTankModeEnabled()
+    and self:IsTankNoTargetEnabled() then
+    self:UpdateTankModePlate(plate)
+  end
 
   -- Tiny diagnostics only; no per-event tables are created.
   if not self.classicAuraStats then self.classicAuraStats = { events = 0, scans = 0 } end

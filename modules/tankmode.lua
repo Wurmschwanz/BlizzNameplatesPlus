@@ -4,10 +4,74 @@ BNP = BNP or {}
 -- Default: GREEN = hostile NPC currently targets the player, RED = another unit.
 -- Normal Tank Mode is fixed: GREEN = aggro, RED = no aggro.
 -- Invert Tank Colors uses two independently user-selectable colors.
--- Idle hostile NPCs keep their normal Blizzard color.
+-- Optional third color for in-combat NPCs temporarily unable to attack.
+-- The existing two-color behavior is preserved while this option is disabled.
 
 local GREEN_R, GREEN_G, GREEN_B = 0.00, 1.00, 0.00
 local RED_R, RED_G, RED_B = 1.00, 0.00, 0.00
+
+-- Only effects that prevent attacking; roots, snares, silence and disarm
+-- alone do not qualify. Shared with the existing aura snapshot reader.
+BNP.TankDisablingCC = {
+  fear=true, howl_of_terror=true, banish=true, death_coil=true,
+  freezing_trap_effect=true, scatter_shot=true, wyvern_sting=true,
+  intimidation=true, scare_beast=true, improved_concussive_shot=true,
+  polymorph=true, impact=true, psychic_scream=true, blackout=true,
+  shackle_undead=true, hammer_of_justice=true, repentance=true, turn_undead=true,
+  gouge=true, kidney_shot=true, cheap_shot=true, sap=true, blind=true,
+  bash=true, pounce=true, hibernate=true, intimidating_shout=true,
+  charge_stun=true, intercept_stun=true, concussion_blow=true, revenge_stun=true,
+}
+
+local function HasFlag(flags, mask)
+  -- Lua 5.0 compatible, without requiring a bit library.
+  return math.mod(math.floor(flags / mask), 2) == 1
+end
+
+local function HasCachedControl(plate, guid, now)
+  -- Authoritative UNIT_AURA snapshot, independent of CC icon visibility.
+  if plate.BNPClassicAuraEventDriven and plate.BNPTankControlGUID ~= guid
+    and BNP.PrimeTankControlSnapshot then
+    BNP:PrimeTankControlSnapshot(plate, guid, now)
+  end
+  if plate.BNPTankControlGUID == guid and plate.BNPClassicAuraEventDriven then
+    return plate.BNPTankControlled and true or false
+  end
+  local cache = BNP.guidAuras and BNP.guidAuras[guid]
+  local key, aura
+  if cache then
+    for key, aura in pairs(cache) do
+      if BNP.TankDisablingCC[key] and aura.expires and aura.expires > now then return true end
+    end
+  end
+  cache = BNP.guidLiveCCs and BNP.guidLiveCCs[guid]
+  if cache then
+    for key, aura in pairs(cache) do
+      if BNP.TankDisablingCC[key] and (aura.eventDriven or now - (aura.lastSeen or 0) <= 0.60) then
+        return true
+      end
+    end
+  end
+  return false
+end
+
+local function IsTemporarilyInactive(plate, guid, now, noTarget)
+  -- One optional descriptor read covers combat, stun, confusion and fleeing,
+  -- including low-health fleeing with a retained target. No tooltip/aura scan.
+  local flags
+  if GetUnitField then
+    local ok, value = pcall(GetUnitField, guid, "flags")
+    if ok and type(value) == "number" then flags = value end
+  end
+  local inCombat
+  if flags then inCombat = HasFlag(flags, 524288)
+  else inCombat = UnitAffectingCombat and UnitAffectingCombat(guid) end
+  if not inCombat then return false end
+  if flags and (HasFlag(flags, 262144) or HasFlag(flags, 4194304) or HasFlag(flags, 8388608)) then
+    return true
+  end
+  return HasCachedControl(plate, guid, now) or noTarget
+end
 
 local playerGUID = nil
 
@@ -19,6 +83,14 @@ end
 
 local function GetPlateGUID(plate)
   if not plate or not plate.GetName then return nil end
+  -- The ClassicAPI token is stable across camera projection changes. Only
+  -- use it while the API maps it back to this exact frame.
+  local token = plate.BNPClassicUnitToken
+  if token and BNP._ClassicUnitGUID and BNP._ClassicGetNamePlateForUnit
+    and BNP._ClassicGetNamePlateForUnit(token) == plate then
+    local stableGUID = BNP._ClassicUnitGUID(token)
+    if stableGUID then return stableGUID end
+  end
   local guid = plate:GetName(1)
   if guid and guid ~= "" then return guid end
   return nil
@@ -27,8 +99,8 @@ end
 local function GetTargetGUID(guid)
   if not guid then return nil end
   local exists, targetGUID = UnitExists(guid .. "target")
-  if exists then return targetGUID end
-  return nil
+  if exists then return targetGUID, false end
+  return nil, true
 end
 
 local function GetBar(plate)
@@ -55,6 +127,22 @@ end
 local function RestoreNormalColor(plate, bar)
   -- Do not restore a cached RGB value. Outside an active Tank Mode state,
   -- Blizzard owns the NPC healthbar color completely.
+  -- Only undo the new third color for this same live NPC. Never replay a
+  -- cached reaction color onto a recycled, player-controlled or tagged plate.
+  local guid = plate.BNPTankNoTargetActive and bar and GetPlateGUID(plate)
+  if guid and guid == plate.BNPTankUnitGUID
+    and IsHostileNPC(guid) and not IsForeignTaggedGUID(guid) then
+    local reaction = UnitReaction and UnitReaction(guid, "player")
+    if reaction then
+      if reaction > 4 then bar:SetStatusBarColor(0, 1, 0, 1)
+      elseif reaction == 4 then bar:SetStatusBarColor(1, 1, 0, 1)
+      else bar:SetStatusBarColor(1, 0, 0, 1) end
+    end
+  end
+  plate.BNPTankNoTargetActive = nil
+  plate.BNPTankNoTargetSince = nil
+  plate.BNPTankUnitGUID = nil
+  plate.BNPTankColorGUID = nil
   plate.BNPTankActive = nil
   plate.BNPTankR = nil
   plate.BNPTankG = nil
@@ -63,6 +151,10 @@ end
 
 local function ClearTankState(plate)
   if not plate then return end
+  plate.BNPTankNoTargetActive = nil
+  plate.BNPTankNoTargetSince = nil
+  plate.BNPTankUnitGUID = nil
+  plate.BNPTankColorGUID = nil
   plate.BNPTankActive = nil
   plate.BNPTankR = nil
   plate.BNPTankG = nil
@@ -71,6 +163,7 @@ end
 
 local function ApplyTankColor(plate, bar, r, g, b)
   bar:SetStatusBarColor(r, g, b, 1)
+  plate.BNPTankColorGUID = GetPlateGUID(plate)
   plate.BNPTankActive = true
   plate.BNPTankR = r
   plate.BNPTankG = g
@@ -79,6 +172,11 @@ end
 
 local function EnforceTankColor(plate)
   if not plate or not plate.BNPTankActive then return end
+  -- Never paint a previous unit's cached color onto a recycled plate.
+  if not BNP:IsTankModeEnabled() or plate.BNPTankColorGUID ~= GetPlateGUID(plate) then
+    ClearTankState(plate)
+    return
+  end
   local bar = GetBar(plate)
   if not bar or not plate.BNPTankR then return end
 
@@ -118,10 +216,36 @@ function BNP:UpdateTankModePlate(plate)
     return
   end
 
+  local thirdColor = self:IsTankNoTargetEnabled()
+  if thirdColor then
+    if plate.BNPTankUnitGUID ~= guid then ClearTankState(plate) end
+    plate.BNPTankUnitGUID = guid
+    if UnitIsDead and UnitIsDead(guid) then
+      RestoreNormalColor(plate, bar)
+      return
+    end
+  elseif plate.BNPTankNoTargetSince or plate.BNPTankNoTargetActive then
+    RestoreNormalColor(plate, bar)
+  end
+
   local myGUID = GetPlayerGUID()
   if not myGUID then return end
 
-  local targetGUID = GetTargetGUID(guid)
+  local targetGUID, noTarget = GetTargetGUID(guid)
+  local now = thirdColor and GetTime()
+  if thirdColor and IsTemporarilyInactive(plate, guid, now, noTarget) then
+    local r, g, b = self:GetTankNoTargetColor()
+    ApplyTankColor(plate, bar, r, g, b)
+    plate.BNPTankNoTargetActive = true
+    return
+  end
+  plate.BNPTankNoTargetSince = nil
+  if thirdColor and not targetGUID then
+    -- No active control and no readable target: relinquish the third color.
+    RestoreNormalColor(plate, bar)
+    return
+  end
+  plate.BNPTankNoTargetActive = nil
   local inverted = self:AreTankModeColorsInverted()
 
   if targetGUID and targetGUID == myGUID then
@@ -153,6 +277,14 @@ function BNP:RefreshTankMode()
 end
 
 function BNP:UpdateTankMode()
+  local enabled = self:IsTankModeEnabled() and self:IsTankNoTargetEnabled()
+  if not enabled then
+    local plate
+    for plate in pairs(self.plates or {}) do
+      plate.BNPTankControlGUID = nil
+      plate.BNPTankControlled = nil
+    end
+  end
   self:RefreshTankMode()
 end
 
@@ -175,6 +307,13 @@ function BNP:InstallTankMode()
         if old then old() end
         EnforceTankColor(current)
       end)
+      -- Blizzard may repaint on camera movement without changing HP. Keep
+      -- only the cached color in sync here; combat/aura reads stay throttled.
+      local oldUpdate = bar:GetScript("OnUpdate")
+      bar:SetScript("OnUpdate", function()
+        if oldUpdate then oldUpdate() end
+        EnforceTankColor(current)
+      end)
       current.BNPTankColorHooked = true
     end
   end)
@@ -183,6 +322,9 @@ function BNP:InstallTankMode()
     local current = plate or this
     if not current then return end
     ClearTankState(current)
+    current.BNPTankControlGUID = nil
+    current.BNPTankControlled = nil
+    BNP:UpdateTankModePlate(current)
   end)
 
   table.insert(self.libnameplate.OnUpdate, function(plate, elapsed)
@@ -192,7 +334,9 @@ function BNP:InstallTankMode()
     -- Tank Mode is optional. Avoid all GUID/target/tap queries while it is off.
     -- Only clean an old BNP-owned state if one is still present.
     if not BNP:IsTankModeEnabled() then
-      if current.BNPTankActive then ClearTankState(current) end
+      if current.BNPTankActive or current.BNPTankNoTargetSince then
+        RestoreNormalColor(current, GetBar(current))
+      end
       return
     end
 

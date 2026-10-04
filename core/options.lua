@@ -1145,7 +1145,7 @@ function BNP:CreateOptions()
   end
 
   frame.pages = {
-    nameplates = CreatePage(510),
+    nameplates = CreatePage(542),
     personal = CreatePage(345),
     auras = CreatePage(520),
     totems = CreatePage(610),
@@ -1454,22 +1454,59 @@ function BNP:CreateOptions()
     0.00, 1.00, 0.00)
   frame.invertNoAggroColorSwatch = invertNoAggroColor
 
-  -- NAMES & LEVEL ---------------------------------------------------------
-  CreateSection(nameplatesPage, "Names & Level", -202)
+  -- Separate scope keeps the large options builder below Lua 5.0's local limit.
+  do
+    local noTarget = CreateCheck(nameplatesPage, "Inactive Combat", -198, function()
+      BNP_DB.tankNoTarget = this:GetChecked() and true or false
+      if BNP.UpdateTankMode then BNP:UpdateTankMode() end
+      if frame.UpdateDependentControls then frame:UpdateDependentControls() end
+    end, 22)
+    noTarget:SetScript("OnEnter", function()
+      GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+      GameTooltip:SetText("Inactive Combat Color", 1, 0.82, 0)
+      GameTooltip:AddLine("Uses a third color only for enemies in combat that are temporarily unable to attack (fear, sheep, stuns or fleeing). Idle enemies are excluded.", 1, 1, 1, true)
+      GameTooltip:AddLine("Reuses tracked CCs, even with a retained target. Direct fleeing status is used when available; otherwise no target in combat is the fallback. Independent of Invert Tank Colors.", 0.8, 0.8, 0.8, true)
+      GameTooltip:Show()
+    end)
+    noTarget:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    frame.tankNoTargetCheck = noTarget
+    frame.tankNoTargetColorSwatch = CreateColorSwatch(nameplatesPage, "Inactive Color", -198, 214,
+      function() return BNP:GetTankNoTargetColor() end,
+      function(r, g, b) BNP:SetTankNoTargetColor(r, g, b) end,
+      0.00, 0.45, 1.00,
+      "Choose the color for temporarily inactive enemies in combat.",
+      "Restores the inactive combat color to blue.")
+  end
 
-  local hidePlayerNames = CreateCheck(nameplatesPage, "Hide Player Names", -226, function()
+  -- Fixed label columns keep all Tank Mode color boxes aligned, regardless
+  -- of label length. Scope avoids adding long-lived options-builder locals.
+  do
+    local _, swatch
+    for _, swatch in ipairs({ frame.invertAggroColorSwatch,
+      frame.invertNoAggroColorSwatch, frame.tankNoTargetColorSwatch }) do
+      if swatch and swatch.BNPLabel then
+        swatch.BNPLabel:SetWidth(110)
+        swatch.BNPLabel:SetJustifyH("LEFT")
+      end
+    end
+  end
+
+  -- NAMES & LEVEL ---------------------------------------------------------
+  CreateSection(nameplatesPage, "Names & Level", -234)
+
+  local hidePlayerNames = CreateCheck(nameplatesPage, "Hide Player Names", -258, function()
     BNP_DB.hidePlayerNames = this:GetChecked() and true or false
     if BNP.RefreshNameVisibility then BNP:RefreshNameVisibility() end
   end, 22)
   frame.hidePlayerNamesCheck = hidePlayerNames
 
-  local hideNPCNames = CreateCheck(nameplatesPage, "Hide NPC Names", -226, function()
+  local hideNPCNames = CreateCheck(nameplatesPage, "Hide NPC Names", -258, function()
     BNP_DB.hideNPCNames = this:GetChecked() and true or false
     if BNP.RefreshNameVisibility then BNP:RefreshNameVisibility() end
   end, 214)
   frame.hideNPCNamesCheck = hideNPCNames
 
-  local hideNameplateLevel = CreateCheck(nameplatesPage, "Hide Level", -250, function()
+  local hideNameplateLevel = CreateCheck(nameplatesPage, "Hide Level", -282, function()
     BNP_DB.hideNameplateLevel = this:GetChecked() and true or false
     if BNP.RefreshNameplateLevelVisibility then BNP:RefreshNameplateLevelVisibility() end
     if BNP.RefreshCastbarLayout then BNP:RefreshCastbarLayout() end
@@ -1483,7 +1520,7 @@ function BNP:CreateOptions()
   hideNameplateLevel:SetScript("OnLeave", function() GameTooltip:Hide() end)
   frame.hideNameplateLevelCheck = hideNameplateLevel
 
-  local customNameColor = CreateCheck(nameplatesPage, "Custom Name Color", -250, function()
+  local customNameColor = CreateCheck(nameplatesPage, "Custom Name Color", -282, function()
     BNP_DB.customNameColor = this:GetChecked() and true or false
     if BNP.RefreshNameAppearance then BNP:RefreshNameAppearance() end
     if frame.UpdateDependentControls then frame:UpdateDependentControls() end
@@ -1497,7 +1534,7 @@ function BNP:CreateOptions()
   customNameColor:SetScript("OnLeave", function() GameTooltip:Hide() end)
   frame.customNameColorCheck = customNameColor
 
-  local nameColorSwatch, nameColorLabel = CreateColorSwatch(nameplatesPage, "Name Color", -276, 214,
+  local nameColorSwatch, nameColorLabel = CreateColorSwatch(nameplatesPage, "Name Color", -308, 214,
     function() return BNP:GetNameColor() end,
     function(r, g, b) BNP:SetNameColor(r, g, b) end,
     1.00, 1.00, 1.00,
@@ -1514,7 +1551,7 @@ function BNP:CreateOptions()
 
   -- Name text controls are independent from Nameplate Scale. The size setting
   -- only touches the Blizzard name FontString; the Y offset only moves it.
-  local nameFontSize = CreateSlider(nameplatesPage, "Name Font Size", 8, 24, 1, -306, 28, 150)
+  local nameFontSize = CreateSlider(nameplatesPage, "Name Font Size", 8, 24, 1, -338, 28, 150)
   nameFontSize:SetScript("OnValueChanged", function()
     if not BNP_DB or frame.BNPSyncingNameControls then return end
     local value = math.floor(this:GetValue() + 0.5)
@@ -1524,7 +1561,7 @@ function BNP:CreateOptions()
   end)
   frame.nameFontSizeSlider = nameFontSize
 
-  local nameFontYOffset = CreateSlider(nameplatesPage, "Name Y Offset", -50, 50, 1, -306, 220, 150)
+  local nameFontYOffset = CreateSlider(nameplatesPage, "Name Y Offset", -50, 50, 1, -338, 220, 150)
   nameFontYOffset:SetScript("OnValueChanged", function()
     if not BNP_DB or frame.BNPSyncingNameControls then return end
     local value = RoundSignedInteger(this:GetValue())
@@ -1535,15 +1572,15 @@ function BNP:CreateOptions()
   frame.nameFontYOffsetSlider = nameFontYOffset
 
   -- HEALTH BAR & TEXT -----------------------------------------------------
-  CreateSection(nameplatesPage, "Health Bar & Text", -336)
+  CreateSection(nameplatesPage, "Health Bar & Text", -368)
 
   local healthTextLabel = nameplatesPage:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-  healthTextLabel:SetPoint("TOPLEFT", nameplatesPage, "TOPLEFT", 28, -358)
+  healthTextLabel:SetPoint("TOPLEFT", nameplatesPage, "TOPLEFT", 28, -390)
   healthTextLabel:SetText("Display")
   healthTextLabel:SetTextColor(1.00, 0.82, 0.00)
 
   local healthTextDropdown = CreateFrame("Frame", "BNPHealthTextDropdown", nameplatesPage, "UIDropDownMenuTemplate")
-  healthTextDropdown:SetPoint("TOPLEFT", nameplatesPage, "TOPLEFT", 10, -370)
+  healthTextDropdown:SetPoint("TOPLEFT", nameplatesPage, "TOPLEFT", 10, -402)
   UIDropDownMenu_SetWidth(150, healthTextDropdown)
 
   local healthModeLabels = {
@@ -1579,12 +1616,12 @@ function BNP:CreateOptions()
   frame.SetHealthTextMode = SetHealthTextMode
 
   local healthOutlineLabel = nameplatesPage:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-  healthOutlineLabel:SetPoint("TOPLEFT", nameplatesPage, "TOPLEFT", 220, -358)
+  healthOutlineLabel:SetPoint("TOPLEFT", nameplatesPage, "TOPLEFT", 220, -390)
   healthOutlineLabel:SetText("Outline")
   healthOutlineLabel:SetTextColor(1.00, 0.82, 0.00)
 
   local healthOutlineDropdown = CreateFrame("Frame", "BNPHealthOutlineDropdown", nameplatesPage, "UIDropDownMenuTemplate")
-  healthOutlineDropdown:SetPoint("TOPLEFT", nameplatesPage, "TOPLEFT", 200, -370)
+  healthOutlineDropdown:SetPoint("TOPLEFT", nameplatesPage, "TOPLEFT", 200, -402)
   UIDropDownMenu_SetWidth(150, healthOutlineDropdown)
 
   local healthOutlineLabels = {
@@ -1617,7 +1654,7 @@ function BNP:CreateOptions()
   frame.healthTextOutlineDropdown = healthOutlineDropdown
   frame.SetHealthTextOutline = SetHealthTextOutline
 
-  local healthFontSize = CreateSlider(nameplatesPage, "Health Font Size", 8, 20, 1, -416, 28, 150)
+  local healthFontSize = CreateSlider(nameplatesPage, "Health Font Size", 8, 20, 1, -448, 28, 150)
   healthFontSize:SetScript("OnValueChanged", function()
     if not BNP_DB or frame.BNPSyncingHealthTextControls then return end
     local value = math.floor(this:GetValue() + 0.5)
@@ -1627,7 +1664,7 @@ function BNP:CreateOptions()
   end)
   frame.healthTextFontSizeSlider = healthFontSize
 
-  local blackHealthbarBackground = CreateCheck(nameplatesPage, "Black Health Background", -412, function()
+  local blackHealthbarBackground = CreateCheck(nameplatesPage, "Black Health Background", -444, function()
     BNP_DB.blackHealthbarBackground = this:GetChecked() and true or false
     if BNP.RefreshHealthbarBackground then BNP:RefreshHealthbarBackground() end
   end, 214)
@@ -1642,9 +1679,9 @@ function BNP:CreateOptions()
 
   -- COMBO POINTS (Rogue / Druid only) ------------------------------------
   if comboOptionsClass then
-    CreateSection(nameplatesPage, "Combo Points", -442)
+    CreateSection(nameplatesPage, "Combo Points", -474)
 
-    local comboPoints = CreateCheck(nameplatesPage, "Combo Points", -466, function()
+    local comboPoints = CreateCheck(nameplatesPage, "Combo Points", -498, function()
       BNP_DB.comboPoints = this:GetChecked() and true or false
       if BNP.RefreshComboPoints then BNP:RefreshComboPoints() end
       if BNP.RefreshAllAuraLayouts then BNP:RefreshAllAuraLayouts() end
@@ -1653,7 +1690,7 @@ function BNP:CreateOptions()
     end, 22)
     frame.comboPointsCheck = comboPoints
 
-    local darkComboPointBorder = CreateCheck(nameplatesPage, "Dark CP Border", -466, function()
+    local darkComboPointBorder = CreateCheck(nameplatesPage, "Dark CP Border", -498, function()
       BNP_DB.darkComboPointBorder = this:GetChecked() and true or false
       if BNP.RefreshComboPointBorderStyle then BNP:RefreshComboPointBorderStyle() end
       if BNP.RefreshComboPoints then BNP:RefreshComboPoints() end
@@ -1668,7 +1705,7 @@ function BNP:CreateOptions()
     darkComboPointBorder:SetScript("OnLeave", function() GameTooltip:Hide() end)
     frame.darkComboPointBorderCheck = darkComboPointBorder
 
-    local comboYOffset = CreateSlider(nameplatesPage, "Combo Point Y Offset", -50, 50, 1, -466, 278, 105)
+    local comboYOffset = CreateSlider(nameplatesPage, "Combo Point Y Offset", -50, 50, 1, -498, 278, 105)
     comboYOffset:SetScript("OnValueChanged", function()
       if not BNP_DB then return end
       local value = RoundSignedInteger(this:GetValue())
@@ -2783,6 +2820,8 @@ function BNP:CreateOptions()
         swatch.BNPLabel:SetTextColor(enabled and 1 or 0.5, enabled and 0.82 or 0.5, enabled and 0 or 0.5)
       end
     end
+    SetCheckEnabled(self.tankNoTargetCheck, BNP:IsTankModeEnabled())
+    SetTankSwatchEnabled(self.tankNoTargetColorSwatch, BNP:IsTankModeEnabled() and BNP:IsTankNoTargetEnabled())
     SetTankSwatchEnabled(self.invertAggroColorSwatch, invertTankEnabled)
     SetTankSwatchEnabled(self.invertNoAggroColorSwatch, invertTankEnabled)
 
@@ -3117,7 +3156,9 @@ function BNP:SyncOptions()
     frame.castbarTestCheck:SetChecked(self.IsCastbarTestMode and self:IsCastbarTestMode() or false)
   end
   frame.tankCheck:SetChecked(self:IsTankModeEnabled())
+  if frame.tankNoTargetCheck then frame.tankNoTargetCheck:SetChecked(self:IsTankNoTargetEnabled()) end
   if frame.invertTankColorsCheck then frame.invertTankColorsCheck:SetChecked(self:AreTankModeColorsInverted()) end
+  if frame.tankNoTargetColorSwatch and frame.tankNoTargetColorSwatch.RefreshColor then frame.tankNoTargetColorSwatch:RefreshColor() end
   if frame.invertAggroColorSwatch and frame.invertAggroColorSwatch.RefreshColor then frame.invertAggroColorSwatch:RefreshColor() end
   if frame.invertNoAggroColorSwatch and frame.invertNoAggroColorSwatch.RefreshColor then frame.invertNoAggroColorSwatch:RefreshColor() end
   if frame.comboPointsCheck and comboOptionsClass then
