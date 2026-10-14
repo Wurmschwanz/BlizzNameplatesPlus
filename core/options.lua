@@ -13,15 +13,63 @@ local function RoundSignedInteger(value)
   return math.ceil(value - 0.5)
 end
 
+-- Numeric edit boxes share the sliders' existing OnValueChanged callbacks.
+-- Changes are committed on Enter/focus loss; the slider remains the only
+-- source of truth so DB writes and refreshes keep using existing handlers.
 local sliderCount = 0
+local numericSliders = {}
+
+local function FormatSliderNumber(slider)
+  local step = slider.BNPStep or 1
+  local value = Round(slider:GetValue(), step)
+  if math.abs(value) < 0.00001 then value = 0 end
+  if step >= 1 then return string.format("%.0f", value) end
+  if step >= 0.1 then return string.format("%.1f", value) end
+  return string.format("%.2f", value)
+end
+
+local function RefreshNumericInput(slider, force)
+  local edit = slider.BNPNumericInput
+  if edit and (force or not edit:HasFocus()) then
+    edit:SetText(FormatSliderNumber(slider))
+  end
+end
+
+local function CommitNumericInput(edit)
+  local slider = edit.BNPSlider
+  if not slider then return end
+  local raw = edit:GetText() or ""
+  -- Accept both decimal separators without allowing non-numeric values.
+  local normalized = string.gsub(raw, ",", ".")
+  local number = tonumber(normalized)
+  if number and number == number and number ~= math.huge and number ~= -math.huge then
+    -- Dynamic ranges (for example Classic Castbar Height) must be read live.
+    local minValue, maxValue = slider:GetMinMaxValues()
+    if number < minValue then number = minValue end
+    if number > maxValue then number = maxValue end
+    number = Round(number, slider.BNPStep or 1)
+    if number < minValue then number = minValue end
+    if number > maxValue then number = maxValue end
+    slider:SetValue(number)
+  end
+  -- Invalid/empty input restores the current slider value.
+  RefreshNumericInput(slider, true)
+end
+
 local function CreateSlider(parent, label, minValue, maxValue, step, y, x, width)
   sliderCount = sliderCount + 1
   local slider = CreateFrame("Slider", "BNPOptionsSlider" .. sliderCount, parent, "OptionsSliderTemplate")
-  slider:SetPoint("TOPLEFT", parent, "TOPLEFT", x or 28, y)
-  slider:SetWidth(width or 220)
+  local xPos, sliderWidth = x or 28, width or 220
+  -- Leave room for the number box in the two-column menu (438px page).
+  if sliderWidth >= 145 and sliderWidth <= 160 and (xPos < 50 or xPos >= 240) then
+    sliderWidth = 136
+  end
+  slider:SetPoint("TOPLEFT", parent, "TOPLEFT", xPos, y)
+  slider:SetWidth(sliderWidth)
   slider:SetHeight(16)
   slider:SetMinMaxValues(minValue, maxValue)
   slider:SetValueStep(step)
+  slider.BNPStep = step
 
   -- Modern BNP menu: keep the useful value/title, remove the noisy min/max
   -- labels from Blizzard's old slider template.
@@ -35,6 +83,41 @@ local function CreateSlider(parent, label, minValue, maxValue, step, y, x, width
     title:SetTextColor(0.90, 0.92, 0.95)
   end
 
+  -- Compact number box to the right, inherited alpha from its parent slider.
+  -- InputBoxTemplate exists in the Vanilla 1.12 UI.
+  local edit = CreateFrame("EditBox", "BNPOptionsValue" .. sliderCount, slider, "InputBoxTemplate")
+  edit:SetWidth(44)
+  edit:SetHeight(18)
+  edit:SetPoint("LEFT", slider, "RIGHT", 6, 0)
+  edit:SetAutoFocus(false)
+  edit:SetMaxLetters(8)
+  edit:SetFontObject(GameFontHighlightSmall)
+  edit:SetJustifyH("CENTER")
+  edit.BNPSlider = slider
+  slider.BNPNumericInput = edit
+  edit:SetScript("OnEnterPressed", function()
+    local input = this
+    CommitNumericInput(input)
+    input.BNPSkipNextCommit = true
+    input:ClearFocus()
+  end)
+  edit:SetScript("OnEscapePressed", function()
+    local input = this
+    RefreshNumericInput(input.BNPSlider, true)
+    input.BNPSkipNextCommit = true
+    input:ClearFocus()
+  end)
+  edit:SetScript("OnEditFocusLost", function()
+    if this.BNPSkipNextCommit then
+      this.BNPSkipNextCommit = nil
+    else
+      CommitNumericInput(this)
+    end
+  end)
+  edit:SetScript("OnEditFocusGained", function()
+    this:HighlightText()
+  end)
+  table.insert(numericSliders, slider)
   return slider
 end
 
@@ -2934,6 +3017,38 @@ function BNP:CreateOptions()
       self.targetScaleSlider:SetAlpha(targetScaleEnabled and 1.0 or 0.45)
       if self.targetScaleSlider.EnableMouse then self.targetScaleSlider:EnableMouse(targetScaleEnabled) end
     end
+
+    -- Keep the new text fields disabled alongside conditionally disabled sliders.
+    local i
+    for i = 1, table.getn(numericSliders) do
+      local slider = numericSliders[i]
+      local edit = slider.BNPNumericInput
+      if edit then
+        local enabled = not slider.IsMouseEnabled or slider:IsMouseEnabled()
+        edit:EnableMouse(enabled)
+        if edit.EnableKeyboard then edit:EnableKeyboard(enabled) end
+        if not enabled and edit:HasFocus() then edit:ClearFocus() end
+      end
+    end
+  end
+
+  -- Attach once after all option-specific slider handlers are installed.
+  -- Wrapping (not replacing) them preserves their saved values and refreshes.
+  local sliderIndex
+  for sliderIndex = 1, table.getn(numericSliders) do
+    local slider = numericSliders[sliderIndex]
+    local callback = slider:GetScript("OnValueChanged")
+    slider:SetScript("OnValueChanged", function()
+      if callback then callback() end
+      RefreshNumericInput(slider)
+    end)
+    RefreshNumericInput(slider, true)
+  end
+  function frame:BNPRefreshNumericInputs()
+    local i
+    for i = 1, table.getn(numericSliders) do
+      RefreshNumericInput(numericSliders[i])
+    end
   end
 
   frame:ShowTab("nameplates")
@@ -3266,6 +3381,7 @@ function BNP:SyncOptions()
   end
 
   if frame.UpdateDependentControls then frame:UpdateDependentControls() end
+  if frame.BNPRefreshNumericInputs then frame:BNPRefreshNumericInputs() end
   frame.versionText:SetText("Version " .. tostring(self.version or "?"))
 end
 

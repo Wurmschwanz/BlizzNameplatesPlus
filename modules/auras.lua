@@ -171,6 +171,38 @@ local function AnchorAuraContainer(plate, container, isCC)
       container:SetPoint("BOTTOM", plate, "BOTTOM", 0, 24 + (isCC and (GetCCOffsetY() - GetBaseAuraOffsetY()) or GetDebuffYOffset()) + compactShift)
     end
   end
+
+  -- Remember the actual attachment, not a screen coordinate. Some 1.12
+  -- nameplate frames are recycled after Blizzard has touched their regions.
+  -- A cheap, throttled check below can then repair a lost anchor without
+  -- calling ClearAllPoints() on every render tick.
+  if container.GetPoint then
+    container.BNPAnchorPoint, container.BNPAnchorRelative,
+      container.BNPAnchorRelativePoint, container.BNPAnchorX,
+      container.BNPAnchorY = container:GetPoint(1)
+  end
+  container.BNPAnchorRightSpacing = (position == "right") and GetRightAuraSpacing(plate) or nil
+end
+
+-- Only validate the attachment periodically. The icon layout itself is
+-- cached independently; reflowing all icons every 0.05s is unnecessary.
+function BNP:VerifyAuraContainerAnchor(plate, container, isCC)
+  if not plate or not container or not container.GetPoint then return end
+
+  local point, relative, relativePoint, x, y = container:GetPoint(1)
+  local expectedAnchor = plate.healthbar or plate
+  local position = isCC and GetCCPosition() or GetDebuffPosition()
+  local expectedRightSpacing = (position == "right") and GetRightAuraSpacing(plate) or nil
+  if point ~= container.BNPAnchorPoint
+    or relative ~= container.BNPAnchorRelative
+    or relativePoint ~= container.BNPAnchorRelativePoint
+    or math.abs((x or 0) - (container.BNPAnchorX or 0)) > 0.01
+    or math.abs((y or 0) - (container.BNPAnchorY or 0)) > 0.01
+    or relative ~= expectedAnchor
+    or container.BNPAnchorRightSpacing ~= expectedRightSpacing
+    or (container.GetNumPoints and container:GetNumPoints() ~= 1) then
+    AnchorAuraContainer(plate, container, isCC)
+  end
 end
 
 function BNP:RefreshAuraLayoutForPlate(plate)
@@ -3585,6 +3617,16 @@ local function UpdatePlate(plate, now)
   local container = plate.BNPAuraContainer
   if not container then return end
 
+  now = now or GetTime()
+  -- A reused plate may acquire its level width after OnShow, or have a native
+  -- anchor rewritten by the client. Check just 2.5 times/sec per visible plate,
+  -- not during every fast aura/icon update.
+  if now >= (plate.BNPNextAuraAnchorCheck or 0) then
+    plate.BNPNextAuraAnchorCheck = now + 0.40
+    BNP:VerifyAuraContainerAnchor(plate, container, false)
+    BNP:VerifyAuraContainerAnchor(plate, plate.BNPCCContainer, true)
+  end
+
   -- Nameplate frames are recycled. Re-anchor only when the hidden-name state
   -- changes so Player/NPC hide options immediately compact Top aura rows.
   local nameHidden = (BNP.IsPlateNameHidden and BNP:IsPlateNameHidden(plate)) or (plate.BNPNameHidden and true or false)
@@ -4011,6 +4053,15 @@ table.insert(BNP.libnameplate.OnInit, CreateAuraContainer)
 table.insert(BNP.libnameplate.OnInit, CreateCCContainer)
 table.insert(BNP.libnameplate.OnShow, CreateAuraContainer)
 table.insert(BNP.libnameplate.OnShow, CreateCCContainer)
+-- The existing-container fast paths above intentionally do not create new
+-- frames. They must still reset the attachment and icon-layout cache whenever
+-- Blizzard reuses a nameplate for another mob (even with the same aura count).
+table.insert(BNP.libnameplate.OnShow, function(plate)
+  if not plate then return end
+  BNP:RefreshAuraLayoutForPlate(plate)
+  BNP:RefreshAuraLayout(plate)
+  plate.BNPNextAuraAnchorCheck = nil
+end)
 
 -- Keep the proven central update loop. Optional CooldownFrames are created
 -- lazily per used icon only when Cooldown Spiral is enabled.
