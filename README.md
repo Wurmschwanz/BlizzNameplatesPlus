@@ -4,7 +4,7 @@
 
 It adds reliable multi-target aura tracking, Crowd Control, PvP immunities, castbars, Combo Points, Personal Nameplates, quest indicators, totem icons, Raid Marks and extensive customization — without replacing the original Blizzard nameplate system.
 
-**Current version:** `v2.0.0`  
+**Current version:** `v2.0.1`  
 **Required:** `SuperWoW.dll` + `ClassicAPI.dll`
 
 ---
