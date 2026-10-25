@@ -60,17 +60,25 @@ local function HasCachedControl(plate, guid, now)
   return controlled, false
 end
 
-local function IsTemporarilyInactive(plate, guid, now, targetExists)
-  -- One optional descriptor read covers combat, stun, confusion and fleeing,
-  -- including low-health fleeing with a retained target. No tooltip/aura scan.
+-- Share a single combat-state read across the normal two-color Tank Mode and
+-- the optional CC/fleeing third color. A valid out-of-combat result must never
+-- be mistaken for a live threat/target (NPCs can retain targets after combat).
+local function GetCombatState(guid)
   local flags
   if GetUnitField then
     local ok, value = pcall(GetUnitField, guid, "flags")
     if ok and type(value) == "number" then flags = value end
   end
-  local inCombat
-  if flags then inCombat = HasFlag(flags, 524288)
-  else inCombat = UnitAffectingCombat and UnitAffectingCombat(guid) end
+  if flags then return HasFlag(flags, 524288), flags end
+  if UnitAffectingCombat then
+    return UnitAffectingCombat(guid) and true or false, nil
+  end
+  return nil, nil  -- Unknown: keep legacy handling for hostile NPCs.
+end
+
+local function IsTemporarilyInactive(plate, guid, now, targetExists, flags, inCombat)
+  -- One optional descriptor read covers combat, stun, confusion and fleeing,
+  -- including low-health fleeing with a retained target. No tooltip/aura scan.
   if not inCombat then
     -- Do not wait for the combat flag when the actual opening Charge stun
     -- is already in the harmful-aura snapshot. Pre-pull sheep/sap stay out.
@@ -140,13 +148,16 @@ local function HasZeroHealth(bar)
   return minimum == 0 and maximum and maximum > 0
 end
 
-local function IsHostileNPC(guid)
+local function IsLiveNPC(guid)
   if not guid or not UnitExists(guid) then return false end
   if UnitIsPlayer and UnitIsPlayer(guid) then return false end
-  -- Player-controlled pets/guardians are not NPC tank targets. Treating them
-  -- as hostile NPCs made Tank Mode overwrite their normal pet plate colors.
+  -- Player-controlled pets/guardians have their own color renderer.
   if UnitPlayerControlled and UnitPlayerControlled(guid) then return false end
-  return UnitCanAttack("player", guid) and true or false
+  return true
+end
+
+local function IsHostileNPC(guid)
+  return IsLiveNPC(guid) and UnitCanAttack("player", guid) and true or false
 end
 
 local function IsForeignTaggedGUID(guid)
@@ -158,18 +169,27 @@ local function IsForeignTaggedGUID(guid)
 end
 
 local function RestoreNormalColor(plate, bar)
-  -- Do not restore a cached RGB value. Outside an active Tank Mode state,
-  -- Blizzard owns the NPC healthbar color completely.
-  -- Only undo the new third color for this same live NPC. Never replay a
-  -- cached reaction color onto a recycled, player-controlled or tagged plate.
-  local guid = plate.BNPTankNoTargetActive and bar and GetPlateGUID(plate)
-  if guid and guid == plate.BNPTankUnitGUID
-    and IsHostileNPC(guid) and not IsForeignTaggedGUID(guid) then
-    local reaction = UnitReaction and UnitReaction(guid, "player")
-    if reaction then
-      if reaction > 4 then bar:SetStatusBarColor(0, 1, 0, 1)
-      elseif reaction == 4 then bar:SetStatusBarColor(1, 1, 0, 1)
-      else bar:SetStatusBarColor(1, 0, 0, 1) end
+  -- Undo ANY color applied by Tank Mode, not only the optional third color.
+  -- Previously the standard GREEN/RED colors could survive combat ending.
+  -- Derive the normal color from the CURRENT NPC reaction, never from a
+  -- cached RGB value that might belong to a recycled nameplate.
+  if plate.BNPTankActive and bar then
+    local guid = GetPlateGUID(plate)
+    if guid and IsLiveNPC(guid) and not IsForeignTaggedGUID(guid) then
+      local r, g, b = bar:GetStatusBarColor()
+      local stillOurColor = plate.BNPTankR
+        and math.abs(r - plate.BNPTankR) < 0.01
+        and math.abs(g - plate.BNPTankG) < 0.01
+        and math.abs(b - plate.BNPTankB) < 0.01
+      -- On a recycled plate, repair only if its bar still carries our color.
+      if guid == plate.BNPTankColorGUID or stillOurColor then
+        local reaction = UnitReaction and UnitReaction(guid, "player")
+        if reaction then
+          if reaction > 4 then bar:SetStatusBarColor(0, 1, 0, 1)
+          elseif reaction == 4 then bar:SetStatusBarColor(1, 1, 0, 1)
+          else bar:SetStatusBarColor(1, 0, 0, 1) end
+        end
+      end
     end
   end
   plate.BNPTankNoTargetActive = nil
@@ -207,7 +227,7 @@ local function EnforceTankColor(plate)
   if not plate or not plate.BNPTankActive then return end
   -- Never paint a previous unit's cached color onto a recycled plate.
   if not BNP:IsTankModeEnabled() or plate.BNPTankColorGUID ~= GetPlateGUID(plate) then
-    ClearTankState(plate)
+    RestoreNormalColor(plate, GetBar(plate))
     return
   end
   local bar = GetBar(plate)
@@ -238,9 +258,9 @@ function BNP:UpdateTankModePlate(plate)
 
   local guid = GetPlateGUID(plate)
   if not IsHostileNPC(guid) then
-    -- NPC reaction colors belong to Blizzard. Never restore a stale cached
-    -- Tank Mode color onto neutral/friendly/recycled nameplates.
-    ClearTankState(plate)
+    -- Player-controlled/friendly/recycled plates are never Tank Mode targets.
+    -- Their own class/native or foreign-tag renderer remains authoritative.
+    RestoreNormalColor(plate, bar)
     return
   end
 
@@ -254,6 +274,29 @@ function BNP:UpdateTankModePlate(plate)
   end
 
   local thirdColor = self:IsTankNoTargetEnabled()
+  local inCombat, flags = GetCombatState(guid)
+  local reaction = UnitReaction and UnitReaction(guid, "player")
+
+  -- UnitCanAttack also returns true for neutral/yellow NPCs. Only recolor
+  -- those NPCs once they actually enter combat. Likewise, an out-of-combat
+  -- hostile mob must keep its native RED, not stale Tank Mode GREEN.
+  -- The only pre-combat exception is the existing opening Charge stun color.
+  if inCombat == false or (reaction and reaction >= 4 and inCombat ~= true) then
+    if thirdColor then
+      local controlled, chargeStun = HasCachedControl(plate, guid, GetTime())
+      if controlled and chargeStun then
+        if plate.BNPTankUnitGUID ~= guid then RestoreNormalColor(plate, bar) end
+        plate.BNPTankUnitGUID = guid
+        local r, g, b = self:GetTankNoTargetColor()
+        ApplyTankColor(plate, bar, r, g, b)
+        plate.BNPTankNoTargetActive = true
+        return
+      end
+    end
+    RestoreNormalColor(plate, bar)
+    return
+  end
+
   if thirdColor then
     if plate.BNPTankUnitGUID ~= guid then ClearTankState(plate) end
     plate.BNPTankUnitGUID = guid
@@ -270,7 +313,7 @@ function BNP:UpdateTankModePlate(plate)
 
   local targetGUID, targetExists = GetTargetGUID(guid)
   local now = thirdColor and GetTime()
-  if thirdColor and IsTemporarilyInactive(plate, guid, now, targetExists) then
+  if thirdColor and IsTemporarilyInactive(plate, guid, now, targetExists, flags, inCombat) then
     local r, g, b = self:GetTankNoTargetColor()
     ApplyTankColor(plate, bar, r, g, b)
     plate.BNPTankNoTargetActive = true
@@ -359,6 +402,9 @@ function BNP:InstallTankMode()
   table.insert(self.libnameplate.OnShow, function(plate)
     local current = plate or this
     if not current then return end
+    -- Recycled nameplate frames can still show the previous mob's Tank color.
+    -- Repair that RGB only when it is demonstrably still BNP-owned.
+    if current.BNPTankActive then RestoreNormalColor(current, GetBar(current)) end
     ClearTankState(current)
     current.BNPTankControlGUID = nil
     current.BNPTankControlled = nil

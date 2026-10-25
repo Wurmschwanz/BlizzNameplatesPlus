@@ -273,9 +273,11 @@ function BNP:GetNameplateScale()
 end
 
 function BNP:GetNameplateYOffset()
+  -- A signed offset shifts the complete Blizzard nameplate visual wrapper:
+  -- negative = down (large NPCs), positive = up, 0 = native position.
   local value = (BNP_DB and tonumber(BNP_DB.nameplateYOffset)) or self.defaults.nameplateYOffset or 0
-  if value < 0 then value = 0 end
-  if value > 50 then value = 50 end
+  if value < -100 then value = -100 end
+  if value > 100 then value = 100 end
   return value
 end
 

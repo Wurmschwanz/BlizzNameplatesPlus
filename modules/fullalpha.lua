@@ -4,8 +4,11 @@ local NON_TARGET_ALPHA = 0.55
 local TARGET_RESOLVE_CACHE_TIME = 0.05
 local ALPHA_IDENTITY_HOLD_TIME = 0.20
 local FOREIGN_TAG_SCAN_INTERVAL = 0.10
-local TARGET_BORDER_TEXTURE = "Interface\\AddOns\\BlizzNameplatesPlus\\media\\classic_nameplate_border.tga"
-local TARGET_BORDER_BOLD_TEXTURE = "Interface\\AddOns\\BlizzNameplatesPlus\\media\\classic_nameplate_border_bold.tga"
+-- Target-only textures must be neutral: native border artwork is gold, and
+-- WoW's vertex tint multiplies RGB rather than replacing the gold pixels.
+-- Keep the original gold textures in visualguard for non-target plates.
+local TARGET_BORDER_TEXTURE = "Interface\\AddOns\\BlizzNameplatesPlus\\media\\classic_nameplate_border_tint.tga"
+local TARGET_BORDER_BOLD_TEXTURE = "Interface\\AddOns\\BlizzNameplatesPlus\\media\\classic_nameplate_border_bold_tint.tga"
 
 
 local targetResolveCacheGUID = nil
@@ -641,10 +644,13 @@ local function ApplyTargetBorderColor(plate)
 
     local boldEnabled = BNP.IsTargetBorderBoldEnabled and BNP:IsTargetBorderBoldEnabled()
     local wantedTexture = boldEnabled and TARGET_BORDER_BOLD_TEXTURE or TARGET_BORDER_TEXTURE
-    if border.SetTexture and plate.BNPTargetBorderTexture ~= wantedTexture then
+    -- A recycled nameplate or visualguard can restore the native gold art
+    -- without clearing our cached path. Check the *real* texture as well.
+    local actualTexture = border.GetTexture and border:GetTexture() or nil
+    if border.SetTexture and (plate.BNPTargetBorderTexture ~= wantedTexture or actualTexture ~= wantedTexture) then
       border:SetTexture(wantedTexture)
-      plate.BNPTargetBorderTexture = wantedTexture
     end
+    plate.BNPTargetBorderTexture = wantedTexture
 
     local needsColor = true
     if border.GetVertexColor then
@@ -678,6 +684,12 @@ local function ApplyTargetBorderColor(plate)
     plate.BNPTargetBorderOverride = nil
     plate.BNPTargetBorderTexture = nil
   end
+end
+
+-- Used after native visual repair to reapply the target-only tint without
+-- walking every visible nameplate (e.g. when Blizzard recycles a frame).
+function BNP:ApplyTargetBorderColorForPlate(plate)
+  ApplyTargetBorderColor(plate)
 end
 
 function BNP:RefreshTargetBorderColor()
@@ -950,7 +962,7 @@ local function InstallAlphaGuard(plate)
     -- the projected nameplate for this frame. This uses the OnUpdate BNP
     -- already needs for alpha/glow/target-level handling.
     if BNP.MaintainNameplateYOffset and BNP_DB and
-       BNP_DB.nameplateYOffset and BNP_DB.nameplateYOffset > 0 then
+       BNP_DB.nameplateYOffset and BNP_DB.nameplateYOffset ~= 0 then
       BNP:MaintainNameplateYOffset(current)
     end
 

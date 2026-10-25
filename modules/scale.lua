@@ -590,7 +590,7 @@ end
 
 function BNP:MaintainNameplateYOffset(plate)
   if not plate or not plate:IsShown() then return end
-  if not self.GetNameplateYOffset or self:GetNameplateYOffset() <= 0 then return end
+  if not self.GetNameplateYOffset or self:GetNameplateYOffset() == 0 then return end
 
   EnsureScaleWrapper(plate)
 

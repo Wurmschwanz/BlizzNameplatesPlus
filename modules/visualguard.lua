@@ -161,6 +161,13 @@ function BNP:RepairNativeNameplateVisuals(plate)
   ApplyBorderStyle(plate)
   ApplyLevelVisibility(plate)
   ApplyHealthbarBackground(plate)
+
+  -- Native repair uses the original gold artwork. Reapply a target-specific
+  -- colored border immediately so White/Blue do not flash gold after OnShow,
+  -- Hide Border toggles, or a plate frame being recycled.
+  if BNP.ApplyTargetBorderColorForPlate then
+    BNP:ApplyTargetBorderColorForPlate(plate)
+  end
 end
 
 function BNP:RefreshNameplateBorderStyle()

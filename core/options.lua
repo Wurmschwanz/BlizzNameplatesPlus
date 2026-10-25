@@ -1438,12 +1438,12 @@ function BNP:CreateOptions()
   end)
   frame.scaleSlider = scale
 
-  local yOffset = CreateSlider(nameplatesPage, "Nameplate Y Offset", 0, 50, 1, -28, 220, 150)
+  local yOffset = CreateSlider(nameplatesPage, "Nameplate Y Offset", -100, 100, 1, -28, 220, 150)
   yOffset:SetScript("OnValueChanged", function()
     if not BNP_DB then return end
-    local value = math.floor(this:GetValue() + 0.5)
+    local value = RoundSignedInteger(this:GetValue())
     BNP_DB.nameplateYOffset = value
-    getglobal(this:GetName() .. "Text"):SetText("Nameplate Y Offset: +" .. value)
+    getglobal(this:GetName() .. "Text"):SetText("Nameplate Y Offset: " .. (value > 0 and "+" or "") .. value)
     if BNP.ApplyNameplateYOffsetAll then BNP:ApplyNameplateYOffsetAll() end
   end)
   frame.yOffsetSlider = yOffset
@@ -3062,7 +3062,7 @@ function BNP:SyncOptions()
   if frame.yOffsetSlider then
     local yOffset = self:GetNameplateYOffset()
     frame.yOffsetSlider:SetValue(yOffset)
-    getglobal(frame.yOffsetSlider:GetName() .. "Text"):SetText("Nameplate Y Offset: +" .. yOffset)
+    getglobal(frame.yOffsetSlider:GetName() .. "Text"):SetText("Nameplate Y Offset: " .. (yOffset > 0 and "+" or "") .. yOffset)
   end
   if frame.nameFontSizeSlider or frame.nameFontYOffsetSlider then
     frame.BNPSyncingNameControls = true
