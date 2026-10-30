@@ -124,10 +124,9 @@ end
 
 local function SetCastbarSpark(bar, state, alpha)
   if not bar or not bar.spark then return end
-  -- BNP stretches the StatusBar between two anchors instead of assigning a
-  -- fixed SetWidth like ShaguTweaks does. On the Vanilla 1.12 client GetWidth()
-  -- can lag behind / disagree with that anchor-defined render width. Keep the
-  -- exact logical width calculated from the same healthbar anchors instead.
+  -- On the Vanilla 1.12 client GetWidth() can lag a layout update.
+  -- Use the validated fixed logical width also used by the castbar itself,
+  -- never a transient/projected healthbar measurement.
   local minValue, maxValue = bar:GetMinMaxValues()
   local currentValue = bar:GetValue() or minValue or 0
   minValue = minValue or 0
@@ -212,24 +211,77 @@ local function GetCastbarEndExtension(plate)
   return 0
 end
 
-local function ApplyCastbarLayout(plate, bar)
+-- Occasionally the projected Blizzard healthbar reports transitional geometry
+-- when its nameplate moves/recycles. Do not let one bad width stretch the castbar
+-- across the screen or displace its progress spark. Dimensions here are local
+-- frame units; the normal nameplate/target scale still comes from the wrapper.
+local CAST_MIN_HEALTH_WIDTH = 25
+local CAST_MAX_HEALTH_WIDTH = 400
+local CAST_WIDTH_JUMP_FACTOR = 1.50
+local CAST_FALLBACK_HEALTH_WIDTH = 110
+
+local function GetSafeHealthbarWidth(plate, bar)
+  if not plate or not plate.healthbar or not bar then return CAST_FALLBACK_HEALTH_WIDTH end
+
+  local measured = plate.healthbar:GetWidth()
+  local previous = bar.BNPStableHealthWidth
+  local wrapper = plate.BNPScaleWrapper
+  local originalWidth = wrapper and wrapper.originalWidth
+  -- Reject an oversized FIRST measurement too: otherwise the bad value
+  -- itself would be cached as the reference for all subsequent casts.
+  local firstWidthPlausible = previous or
+    type(originalWidth) ~= "number" or
+    originalWidth < 80 or originalWidth > CAST_MAX_HEALTH_WIDTH or
+    (type(measured) == "number" and measured <= originalWidth * 2)
+  if type(measured) == "number" and
+     measured >= CAST_MIN_HEALTH_WIDTH and measured <= CAST_MAX_HEALTH_WIDTH and
+     firstWidthPlausible and
+     (not previous or
+      (measured >= (previous / CAST_WIDTH_JUMP_FACTOR) and
+       measured <= (previous * CAST_WIDTH_JUMP_FACTOR))) then
+    bar.BNPStableHealthWidth = measured
+    return measured
+  end
+
+  if previous then return previous end
+
+  -- Even the first cast on a newly projected nameplate can land on a bad
+  -- geometry frame. The original plate width is a better fallback than the
+  -- transient healthbar width; if missing, use a Classic-sized default.
+  local fallback = originalWidth
+  if type(fallback) ~= "number" or
+     fallback < CAST_MIN_HEALTH_WIDTH or fallback > CAST_MAX_HEALTH_WIDTH then
+    fallback = CAST_FALLBACK_HEALTH_WIDTH
+  end
+  return fallback
+end
+
+local function ApplyCastbarLayout(plate, bar, healthWidth)
   if not plate or not plate.healthbar or not bar then return end
   local gap = BAR_GAP + GetBottomAuraClearance(plate)
   local xOffset = GetCastbarXOffset()
   local yOffset = GetCastbarYOffset()
   local barStartOffset = GetCastbarStartOffset()
   local endExtension = GetCastbarEndExtension(plate)
+  healthWidth = healthWidth or GetSafeHealthbarWidth(plate, bar)
 
+  -- A recycled plate may have received the wrapper AFTER the castbar was
+  -- created. Both castbar and icon must inherit the exact same parent scale.
+  local parent = plate.BNPScaleWrapper or plate
+  if bar:GetParent() ~= parent then bar:SetParent(parent) end
+  if bar.icon and bar.icon:GetParent() ~= parent then bar.icon:SetParent(parent) end
+
+  -- Anchor only the left edge and set a validated logical width explicitly.
+  -- The old dual-edge TOPLEFT/TOPRIGHT stretch followed bad healthbar geometry
+  -- during projection/movement, sometimes leaving a huge castbar for one unit.
+  local renderWidth = healthWidth + endExtension - barStartOffset
+  if renderWidth < 1 then renderWidth = 1 end
   bar:ClearAllPoints()
   bar:SetPoint("TOPLEFT", plate.healthbar, "BOTTOMLEFT", barStartOffset + xOffset, -gap + yOffset)
-  bar:SetPoint("TOPRIGHT", plate.healthbar, "BOTTOMRIGHT", endExtension + xOffset, -gap + yOffset)
-
-  -- Store the width implied by those two anchors. xOffset cancels because it
-  -- moves both edges equally. This is also the exact travel distance for the
-  -- cast spark.
-  local healthWidth = plate.healthbar:GetWidth() or 0
-  bar.BNPRenderWidth = healthWidth + endExtension - barStartOffset
-  if bar.BNPRenderWidth < 0 then bar.BNPRenderWidth = 0 end
+  bar:SetWidth(renderWidth)
+  bar.BNPRenderWidth = renderWidth
+  bar.BNPLayoutHealthWidth = healthWidth
+  bar.BNPLayoutEndExtension = endExtension
 
   if bar.icon then
     bar.icon:ClearAllPoints()
@@ -326,12 +378,18 @@ local function CreateCastbar(plate)
   local gap = BAR_GAP + GetBottomAuraClearance(plate)
   local xOffset = GetCastbarXOffset()
   local yOffset = GetCastbarYOffset()
+  -- Initial placement uses the same guarded one-edge geometry as all later
+  -- layout updates. Never stretch the first frame between two live anchors.
   local initialStartOffset = GetCastbarStartOffset()
+  local initialHealthWidth = GetSafeHealthbarWidth(plate, bar)
+  local initialEndExtension = GetCastbarEndExtension(plate)
+  local initialRenderWidth = initialHealthWidth + initialEndExtension - initialStartOffset
+  if initialRenderWidth < 1 then initialRenderWidth = 1 end
   bar:SetPoint("TOPLEFT", plate.healthbar, "BOTTOMLEFT", initialStartOffset + xOffset, -gap + yOffset)
-  bar:SetPoint("TOPRIGHT", plate.healthbar, "BOTTOMRIGHT", 14 + xOffset, -gap + yOffset)
-  local initialHealthWidth = plate.healthbar:GetWidth() or 0
-  bar.BNPRenderWidth = initialHealthWidth + 14 - initialStartOffset
-  if bar.BNPRenderWidth < 0 then bar.BNPRenderWidth = 0 end
+  bar:SetWidth(initialRenderWidth)
+  bar.BNPRenderWidth = initialRenderWidth
+  bar.BNPLayoutHealthWidth = initialHealthWidth
+  bar.BNPLayoutEndExtension = initialEndExtension
   bar:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
   bar:SetStatusBarColor(1.0, 0.8, 0.0)
   bar:SetMinMaxValues(0, 1)
@@ -661,9 +719,36 @@ updater:SetScript("OnUpdate", function()
       else
         local bar = CreateCastbar(plate)
         if bar then
+          -- Active bars already run through this updater. Check only their
+          -- lightweight geometry here; no additional nameplate scan is added.
+          -- Recover on the next frame when projected width/parent changes,
+          -- while rejecting any transient oversized healthbar measurement.
           local bottomClearance = GetBottomAuraClearance(plate)
-          if bar.BNPBottomAuraClearance ~= bottomClearance then
-            ApplyCastbarLayout(plate, bar)
+          local healthWidth = GetSafeHealthbarWidth(plate, bar)
+          local endExtension = GetCastbarEndExtension(plate)
+          local expectedParent = plate.BNPScaleWrapper or plate
+          if bar.BNPBottomAuraClearance ~= bottomClearance or
+             bar.BNPLayoutHealthWidth ~= healthWidth or
+             bar.BNPLayoutEndExtension ~= endExtension or
+             bar:GetParent() ~= expectedParent or
+             (bar.icon and bar.icon:GetParent() ~= expectedParent) then
+            ApplyCastbarLayout(plate, bar, healthWidth)
+          end
+
+          -- Do not allow an external layout reset or reused nameplate frame
+          -- to leave the castbar/icon at a different local scale or height.
+          -- Normal target/nameplate scaling is inherited from the wrapper.
+          if bar:GetScale() ~= 1 then bar:SetScale(1) end
+          if bar.icon and bar.icon:GetScale() ~= 1 then bar.icon:SetScale(1) end
+          local desiredHeight = GetCastbarHeight()
+          if math.abs((bar:GetHeight() or 0) - desiredHeight) > 0.1 then
+            bar:SetHeight(desiredHeight)
+          end
+          local desiredWidth = bar.BNPRenderWidth or 1
+          local currentWidth = bar:GetWidth() or 0
+          if currentWidth > desiredWidth * 1.5 or
+             (currentWidth > 1 and currentWidth < desiredWidth / 1.5) then
+            bar:SetWidth(desiredWidth)
           end
 
           local name

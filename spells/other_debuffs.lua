@@ -97,7 +97,7 @@ BNP.OtherDebuffDefs = {
     { key="judgementoflight", label="Judgement of Light", category="utility", duration=10,
       spellIDs={20185,20344,20345,20346}, description="10s\nMelee attacks heal attacker for 61" },
     { key="judgementofwisdom", label="Judgement of Wisdom", category="utility", duration=10,
-      spellIDs={20186,20354,20355}, description="10s\nAttacks restore 33 mana to attacker" },
+      spellIDs={20186,20354,20355,51751,51752}, description="10s\nAttacks restore 33 mana to attacker" },
     { key="judgementofthecrusader", label="Judgement of the Crusader", category="utility", duration=10,
       spellIDs={21183,20188,20300,20301,20302,20303}, description="10s\nIncreases Holy damage taken by 140 and Increases melee and ranged AP" },
   },
